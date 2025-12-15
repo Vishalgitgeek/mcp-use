@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-filesystem", "C:/Users/98man/Desktop"]
+    },
+    "memory": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-memory"]
+    },
+    "puppeteer": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-puppeteer"]
+    },
+    "supabase": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@supabase/mcp-server-supabase", "--access-token", "sbp_062ea21bb87797aff2980b665f648519c60b2f95"]
+    }
+  }
+}
