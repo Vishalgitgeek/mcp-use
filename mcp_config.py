@@ -1,109 +1,65 @@
 """MCP server configuration management."""
-from typing import Dict
-import os
-from google.oauth2.credentials import Credentials
-from config import FILESYSTEM_BASE_PATH
 import json
+import os
+from typing import Dict
+from dotenv import load_dotenv
+from google.oauth2.credentials import Credentials
 
-# __________________________________________________________
+# Load environment variables from .env file
+load_dotenv()
 
+def expand_env_vars(obj):
+    """
+    Recursively replace ${VAR} with values from .env.
+    """
+    if isinstance(obj, dict):
+        return {k: expand_env_vars(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [expand_env_vars(i) for i in obj]
+    elif isinstance(obj, str):
+        # Only expands variables that exist in .env
+        return os.path.expandvars(obj)
+    else:
+        return obj
 
 def build_mcp_config(credentials: Credentials, include_gdrive: bool = True) -> Dict:
     """
-    Build MCP server configuration by loading mcp_multi.json and injecting credentials.
-    
-    Args:
-        credentials: Google OAuth credentials
-        include_gdrive: Whether to include Google Drive MCP server
-        
-    Returns:
-        MCP server configuration dictionary
+    Build MCP configuration using .env for static paths and arguments 
+    for dynamic credentials.
     """
-    # 1. Locate and Load the JSON Configuration
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    json_path = os.path.join(current_dir, 'mcp_multi.json')
     
+    # 1. Load the JSON template
+    config_path = os.path.join(os.path.dirname(__file__), 'mcp_multi.json')
     try:
-        with open(json_path, 'r') as f:
-            config = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        print(f"Error loading config: {e}")
+        with open(config_path, 'r') as f:
+            raw_config = json.load(f)
+    except FileNotFoundError:
+        print("Error: mcp_multi.json not found.")
         return {"mcpServers": {}}
 
+    # 2. Fill in static .env values (Paths, IDs, Secrets)
+    config = expand_env_vars(raw_config)
+    
     mcp_servers = config.get("mcpServers", {})
 
-    # 2. Configure Filesystem (Inject Base Path)
-    if "filesystem" in mcp_servers:
-        fs_args = mcp_servers["filesystem"]["args"]
-        # Replace the placeholder {FILESYSTEM_BASE_PATH} with the actual variable
-        mcp_servers["filesystem"]["args"] = [
-            arg.replace("{FILESYSTEM_BASE_PATH}", FILESYSTEM_BASE_PATH) 
-            for arg in fs_args
-        ]
-
-    # 3. Configure Google Drive (Inject Token or Remove if disabled)
+    # 3. Handle Google Drive Logic
     if include_gdrive and "gdrive" in mcp_servers:
         try:
+            # We need to manually inject the dynamic token from the 'credentials' object
+            # because this doesn't exist in the .env file.
             gdrive_args = mcp_servers["gdrive"]["args"]
-            # Replace the placeholder {ACCESS_TOKEN} with the actual token
+            
             mcp_servers["gdrive"]["args"] = [
-                arg.replace("{ACCESS_TOKEN}", credentials.token) 
+                arg.replace("${DYNAMIC_ACCESS_TOKEN}", credentials.token) 
                 for arg in gdrive_args
             ]
-        except Exception:
-            # If token access fails, remove gdrive to prevent crash
-            print("Warning: Failed to inject credentials for GDrive. Disabling.")
+        except Exception as e:
+            print(f"Warning: Failed to inject GDrive token: {e}")
             del mcp_servers["gdrive"]
     else:
-        # If include_gdrive is False, ensure we remove it from the config
+        # If include_gdrive is False, strictly remove it
         if "gdrive" in mcp_servers:
             del mcp_servers["gdrive"]
 
-    return config
-
-
-# __________________________________________________________
-
-# def build_mcp_config(credentials: Credentials, include_gdrive: bool = True) -> Dict:
-    """
-    Build MCP server configuration with Google Drive credentials.
-    
-    Args:
-        credentials: Google OAuth credentials
-        include_gdrive: Whether to include Google Drive MCP server (may not work)
-        
-    Returns:
-        MCP server configuration dictionary
-    """
-    config = {
-        "mcpServers": {
-            "filesystem": {
-                "command": "cmd",
-                "args": [
-                    "/c", "npx", "-y", "@modelcontextprotocol/server-filesystem",
-                    FILESYSTEM_BASE_PATH
-                ]
-            }
-        }
-    }
-    
-    # Note: Google Drive MCP server is deprecated and may not work properly
-    # The server requires authentication setup that's not straightforward
-    # For now, we'll skip it and use filesystem only
-    # TODO: Implement custom Google Drive MCP server or find working alternative
-    if include_gdrive:
-        # Try with access token as argument (may not work)
-        try:
-            config["mcpServers"]["gdrive"] = {
-                "command": "cmd",
-                "args": [
-                    "/c", "npx", "-y", "@modelcontextprotocol/server-gdrive",
-                    "--access-token", credentials.token
-                ]
-            }
-        except Exception:
-            # If it fails, we'll just use filesystem
-            pass
-    
     return config
 

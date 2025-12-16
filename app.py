@@ -8,7 +8,7 @@ from mcp_use import MCPAgent, MCPClient
 async def main():
     load_dotenv()
 
-    # os.environ["SUPABASE_ACCESS_TOKEN"] = os.getenv("SUPABASE_ACCESS_TOKEN", "")
+    os.environ["SUPABASE_ACCESS_TOKEN"] = os.getenv("SUPABASE_ACCESS_TOKEN", "")
 
     
 
