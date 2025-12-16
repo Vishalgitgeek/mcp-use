@@ -31,3 +31,9 @@ nul
 
 tokens/
 
+# SSL certificates
+nginx/ssl/
+
+# Docker
+*.log
+
