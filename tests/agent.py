@@ -111,49 +111,73 @@ class MCPAgent:
 
     def _get_action_parameters(self, action_name: str) -> dict:
         """Get parameter schema for an action."""
-        # Define parameter schemas for known actions
+        # Define parameter schemas for known actions (using actual Composio action names)
         schemas = {
+            # Gmail Actions
             "GMAIL_SEND_EMAIL": {
                 "type": "object",
                 "properties": {
-                    "to": {"type": "string", "description": "Recipient email address"},
+                    "recipient_email": {"type": "string", "description": "Recipient email address"},
                     "subject": {"type": "string", "description": "Email subject"},
                     "body": {"type": "string", "description": "Email body content"}
                 },
-                "required": ["to", "subject", "body"]
+                "required": ["recipient_email", "subject", "body"]
             },
-            "GMAIL_LIST_EMAILS": {
+            "GMAIL_FETCH_EMAILS": {
                 "type": "object",
                 "properties": {
-                    "max_results": {"type": "integer", "description": "Maximum number of emails to return", "default": 10},
-                    "query": {"type": "string", "description": "Search query"}
+                    "max_results": {"type": "integer", "description": "Maximum number of emails to return (1-500)", "default": 10},
+                    "query": {"type": "string", "description": "Gmail search query (e.g., 'from:user subject:meeting is:unread')"},
+                    "label_ids": {"type": "array", "items": {"type": "string"}, "description": "Filter by labels like INBOX, UNREAD, STARRED"},
+                    "include_spam_trash": {"type": "boolean", "description": "Include spam/trash", "default": False}
                 }
             },
-            "GMAIL_GET_EMAIL": {
+            "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID": {
                 "type": "object",
                 "properties": {
-                    "email_id": {"type": "string", "description": "Email ID to retrieve"}
+                    "message_id": {"type": "string", "description": "Gmail message ID (hexadecimal string)"},
+                    "format": {"type": "string", "description": "Format: minimal, full, raw, or metadata", "default": "full"}
                 },
-                "required": ["email_id"]
+                "required": ["message_id"]
             },
-            "GMAIL_SEARCH_EMAILS": {
+            "GMAIL_FETCH_MESSAGE_BY_THREAD_ID": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "max_results": {"type": "integer", "description": "Maximum results", "default": 10}
+                    "thread_id": {"type": "string", "description": "Thread ID to fetch messages from"}
                 },
-                "required": ["query"]
+                "required": ["thread_id"]
             },
-            "GMAIL_CREATE_DRAFT": {
+            "GMAIL_CREATE_EMAIL_DRAFT": {
                 "type": "object",
                 "properties": {
-                    "to": {"type": "string", "description": "Recipient email"},
+                    "recipient_email": {"type": "string", "description": "Recipient email"},
                     "subject": {"type": "string", "description": "Email subject"},
                     "body": {"type": "string", "description": "Email body"}
                 },
-                "required": ["to", "subject", "body"]
+                "required": ["recipient_email", "subject", "body"]
             },
-            "SLACK_SEND_MESSAGE": {
+            "GMAIL_ADD_LABEL_TO_EMAIL": {
+                "type": "object",
+                "properties": {
+                    "message_id": {"type": "string", "description": "Message ID to modify"},
+                    "add_label_ids": {"type": "array", "items": {"type": "string"}, "description": "Labels to add (e.g., STARRED, IMPORTANT)"},
+                    "remove_label_ids": {"type": "array", "items": {"type": "string"}, "description": "Labels to remove (e.g., UNREAD)"}
+                },
+                "required": ["message_id"]
+            },
+            "GMAIL_LIST_LABELS": {
+                "type": "object",
+                "properties": {}
+            },
+            "GMAIL_DELETE_MESSAGE": {
+                "type": "object",
+                "properties": {
+                    "message_id": {"type": "string", "description": "Message ID to delete"}
+                },
+                "required": ["message_id"]
+            },
+            # Slack Actions
+            "SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL": {
                 "type": "object",
                 "properties": {
                     "channel": {"type": "string", "description": "Channel name or ID"},
@@ -161,13 +185,13 @@ class MCPAgent:
                 },
                 "required": ["channel", "text"]
             },
-            "SLACK_LIST_CHANNELS": {
+            "SLACK_LIST_ALL_SLACK_TEAM_CHANNELS_WITH_PAGINATION": {
                 "type": "object",
                 "properties": {
                     "limit": {"type": "integer", "description": "Max channels to return", "default": 100}
                 }
             },
-            "SLACK_GET_CHANNEL_HISTORY": {
+            "SLACK_FETCHES_CONVERSATION_HISTORY": {
                 "type": "object",
                 "properties": {
                     "channel": {"type": "string", "description": "Channel ID"},
@@ -175,14 +199,12 @@ class MCPAgent:
                 },
                 "required": ["channel"]
             },
-            "SLACK_UPLOAD_FILE": {
+            "SLACK_SEARCH_MESSAGES_IN_SLACK": {
                 "type": "object",
                 "properties": {
-                    "channels": {"type": "string", "description": "Channel to upload to"},
-                    "content": {"type": "string", "description": "File content"},
-                    "filename": {"type": "string", "description": "Filename"}
+                    "query": {"type": "string", "description": "Search query"}
                 },
-                "required": ["channels", "content", "filename"]
+                "required": ["query"]
             }
         }
 

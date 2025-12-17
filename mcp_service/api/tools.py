@@ -109,20 +109,23 @@ async def list_provider_actions(
     Returns:
         List of available actions for the provider
     """
-    # Common actions for supported providers
+    # Common actions for supported providers (using actual Composio action names)
     provider_actions = {
         "gmail": [
             {"name": "GMAIL_SEND_EMAIL", "description": "Send an email"},
-            {"name": "GMAIL_GET_EMAIL", "description": "Get email by ID"},
-            {"name": "GMAIL_LIST_EMAILS", "description": "List emails"},
-            {"name": "GMAIL_SEARCH_EMAILS", "description": "Search emails"},
-            {"name": "GMAIL_CREATE_DRAFT", "description": "Create email draft"},
+            {"name": "GMAIL_FETCH_EMAILS", "description": "Fetch/search emails with optional query filter"},
+            {"name": "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", "description": "Get a specific email by message ID"},
+            {"name": "GMAIL_FETCH_MESSAGE_BY_THREAD_ID", "description": "Get all messages in a thread"},
+            {"name": "GMAIL_CREATE_EMAIL_DRAFT", "description": "Create an email draft"},
+            {"name": "GMAIL_ADD_LABEL_TO_EMAIL", "description": "Add or remove labels from an email"},
+            {"name": "GMAIL_LIST_LABELS", "description": "List all Gmail labels"},
+            {"name": "GMAIL_DELETE_MESSAGE", "description": "Permanently delete an email"},
         ],
         "slack": [
-            {"name": "SLACK_SEND_MESSAGE", "description": "Send a message to a channel"},
-            {"name": "SLACK_LIST_CHANNELS", "description": "List available channels"},
-            {"name": "SLACK_GET_CHANNEL_HISTORY", "description": "Get channel message history"},
-            {"name": "SLACK_UPLOAD_FILE", "description": "Upload a file to Slack"},
+            {"name": "SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL", "description": "Send a message to a channel"},
+            {"name": "SLACK_LIST_ALL_SLACK_TEAM_CHANNELS_WITH_PAGINATION", "description": "List available channels"},
+            {"name": "SLACK_FETCHES_CONVERSATION_HISTORY", "description": "Get channel message history"},
+            {"name": "SLACK_SEARCH_MESSAGES_IN_SLACK", "description": "Search for messages"},
         ]
     }
 
