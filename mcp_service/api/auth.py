@@ -37,8 +37,6 @@ async def verify_user_token(authorization: str = Header(...)) -> str:
     """
     Verify user JWT token and extract user_id.
 
-    This is a placeholder - integrate with your existing auth system.
-
     Args:
         authorization: Bearer token from request header
 
@@ -56,19 +54,22 @@ async def verify_user_token(authorization: str = Header(...)) -> str:
 
     token = authorization[7:]  # Remove "Bearer " prefix
 
-    # TODO: Integrate with your actual JWT verification
-    # For now, we'll use the token as the user_id for development
-    # In production, decode the JWT and extract the user_id
-
     if not token:
         raise HTTPException(
             status_code=401,
             detail="Invalid token"
         )
 
-    # Placeholder: Return token as user_id
-    # Replace with actual JWT verification in production
-    user_id = token
+    # Decode JWT token
+    from .google_auth import decode_jwt_token
+    payload = decode_jwt_token(token)
+    user_id = payload.get("sub")
+
+    if not user_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token: no user ID"
+        )
 
     return user_id
 

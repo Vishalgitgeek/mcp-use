@@ -1,13 +1,20 @@
 """MCP Integration Service - Main FastAPI Application."""
 import logging
+from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from .config import SERVER_HOST, SERVER_PORT, validate_config
 from .db.mongodb import connect_to_mongodb, close_connection, create_indexes
 from .api.integrations import router as integrations_router
 from .api.tools import router as tools_router
+from .api.google_auth import router as auth_router
+
+# Static files directory
+STATIC_DIR = Path(__file__).parent.parent / "static"
 
 # Configure logging
 logging.basicConfig(
@@ -79,11 +86,19 @@ app.add_middleware(
 # Include routers
 app.include_router(integrations_router)
 app.include_router(tools_router)
+app.include_router(auth_router)
+
+# Mount static files
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.get("/")
 async def root():
-    """Root endpoint."""
+    """Serve frontend or API info."""
+    index_file = STATIC_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
     return {
         "service": "MCP Integration Service",
         "version": "1.0.0",

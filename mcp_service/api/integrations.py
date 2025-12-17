@@ -70,7 +70,20 @@ async def initiate_connection(
     service = get_integration_service()
 
     try:
-        result = await service.initiate_connection(user_id, provider)
+        result = await service.initiate_connection(
+            user_id,
+            provider,
+            force_reauth=request.force_reauth
+        )
+
+        # Handle already_connected case
+        if result.get("status") == "already_connected":
+            return ConnectResponse(
+                auth_url=None,
+                status="already_connected",
+                message=f"{provider} is already connected"
+            )
+
         return ConnectResponse(
             auth_url=result["auth_url"],
             message=f"Redirect user to auth_url to connect {provider}"
@@ -85,6 +98,9 @@ async def initiate_connection(
 async def oauth_callback(
     code: Optional[str] = None,
     state: Optional[str] = None,
+    status: Optional[str] = None,
+    connectedAccountId: Optional[str] = None,
+    appName: Optional[str] = None,
     error: Optional[str] = None,
     error_description: Optional[str] = None
 ):
@@ -96,18 +112,17 @@ async def oauth_callback(
     if error:
         # OAuth error
         return RedirectResponse(
-            url=f"{OAUTH_REDIRECT_BASE}/integration-error?error={error}&description={error_description or ''}"
+            url=f"{OAUTH_REDIRECT_BASE}/?error={error}"
         )
 
-    # The state parameter typically contains user_id and provider
-    # Composio handles the token exchange
-    # We need to mark the connection as complete
+    # Composio sends: status=success&connectedAccountId=xxx&appName=gmail
+    if status == "success" and appName:
+        return RedirectResponse(
+            url=f"{OAUTH_REDIRECT_BASE}/?connected={appName}"
+        )
 
-    # For now, redirect to success page
-    # In production, parse state, update DB, then redirect
-    return RedirectResponse(
-        url=f"{OAUTH_REDIRECT_BASE}/integration-success"
-    )
+    # Fallback - redirect to home
+    return RedirectResponse(url=f"{OAUTH_REDIRECT_BASE}/")
 
 
 @router.post("/callback/complete")
@@ -134,6 +149,40 @@ async def complete_connection(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/debug/connections")
+async def debug_list_all_connections(user_id: str = Depends(verify_user_token)):
+    """
+    Debug endpoint: List all raw Composio connections for user.
+    """
+    from ..services.composio_service import get_composio_service
+
+    composio = get_composio_service()
+
+    try:
+        connections = composio.client.connected_accounts.list(user_ids=user_id)
+        result = []
+        for conn in connections.items:
+            # Capture all attributes
+            conn_data = {
+                "id": conn.id,
+                "attributes": dir(conn),
+            }
+            # Try to get common attributes
+            for attr in ['toolkit', 'appName', 'app_name', 'authConfigId', 'auth_config_id',
+                        'integrationId', 'integration_id', 'status', 'connectionParams']:
+                conn_data[attr] = getattr(conn, attr, None)
+                # If it's an object, try to get its dict
+                if hasattr(conn_data[attr], '__dict__'):
+                    conn_data[attr] = str(conn_data[attr].__dict__)
+
+            result.append(conn_data)
+
+        return {"user_id": user_id, "connections": result, "count": len(result)}
+
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @router.delete("/{provider}")

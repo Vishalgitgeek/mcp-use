@@ -63,7 +63,8 @@ class IntegrationService:
         self,
         user_id: str,
         provider: str,
-        redirect_url: Optional[str] = None
+        redirect_url: Optional[str] = None,
+        force_reauth: bool = False
     ) -> Dict[str, Any]:
         """
         Start OAuth connection flow for an integration.
@@ -72,16 +73,24 @@ class IntegrationService:
             user_id: User ID
             provider: Integration provider (gmail, slack, etc.)
             redirect_url: Optional custom redirect URL
+            force_reauth: If True, disconnect and re-authenticate even if already connected
 
         Returns:
             Dict with auth_url for OAuth redirect
         """
         provider = provider.lower()
 
-        # Check if already connected
+        # Check if already connected in MongoDB
         existing = await self.get_integration(user_id, provider)
-        if existing and existing.get("status") == IntegrationStatus.ACTIVE.value:
+        if existing and existing.get("status") == IntegrationStatus.ACTIVE.value and not force_reauth:
             raise ValueError(f"User already has an active {provider} connection")
+
+        # If force_reauth, remove existing MongoDB record
+        if force_reauth and existing:
+            collection = await get_collection("integrations")
+            await collection.delete_one({"_id": existing["_id"]})
+            existing = None
+            logger.info(f"Force reauth: removed existing MongoDB record for {provider}")
 
         # Create entity_id from user_id
         entity_id = f"user_{user_id}"
@@ -90,10 +99,42 @@ class IntegrationService:
         connection_info = self.composio.initiate_connection(
             user_id=entity_id,
             app_name=provider,
-            redirect_url=redirect_url
+            redirect_url=redirect_url,
+            force_reauth=force_reauth
         )
 
-        # Create or update integration record
+        logger.info(f"Composio returned: {connection_info}")
+
+        # Handle already connected case
+        if connection_info.get("status") == "already_connected":
+            logger.info(f"Handling already_connected case for {provider}")
+            # Update MongoDB to reflect the active connection
+            collection = await get_collection("integrations")
+            integration_data = {
+                "user_id": user_id,
+                "provider": provider,
+                "composio_entity_id": entity_id,
+                "composio_connection_id": connection_info.get("connection_id"),
+                "status": IntegrationStatus.ACTIVE.value,
+                "updated_at": datetime.utcnow()
+            }
+
+            if existing:
+                await collection.update_one(
+                    {"_id": existing["_id"]},
+                    {"$set": integration_data}
+                )
+            else:
+                integration_data["created_at"] = datetime.utcnow()
+                await collection.insert_one(integration_data)
+
+            return {
+                "auth_url": None,
+                "status": "already_connected",
+                "provider": provider
+            }
+
+        # Create or update integration record for pending connection
         collection = await get_collection("integrations")
 
         integration_data = {
@@ -137,20 +178,29 @@ class IntegrationService:
             Updated integration info
         """
         collection = await get_collection("integrations")
+        provider = provider.lower()
+        entity_id = f"user_{user_id}"
 
+        # Use upsert to create or update the record
         result = await collection.update_one(
-            {"user_id": user_id, "provider": provider.lower()},
+            {"user_id": user_id, "provider": provider},
             {
                 "$set": {
                     "status": IntegrationStatus.ACTIVE.value,
                     "connected_email": connected_email,
-                    "updated_at": datetime.utcnow()
+                    "updated_at": datetime.utcnow(),
+                    "composio_entity_id": entity_id
+                },
+                "$setOnInsert": {
+                    "user_id": user_id,
+                    "provider": provider,
+                    "created_at": datetime.utcnow()
                 }
-            }
+            },
+            upsert=True
         )
 
-        if result.modified_count == 0:
-            raise ValueError(f"No pending connection found for {provider}")
+        logger.info(f"Complete connection: matched={result.matched_count}, modified={result.modified_count}, upserted={result.upserted_id}")
 
         return {
             "provider": provider,

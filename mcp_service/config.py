@@ -3,8 +3,8 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables (override=True ensures .env takes precedence)
+load_dotenv(override=True)
 
 # Base paths
 BASE_DIR = Path(__file__).parent.parent

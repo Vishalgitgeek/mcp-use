@@ -53,7 +53,8 @@ class ComposioService:
         self,
         user_id: str,
         app_name: str,
-        redirect_url: Optional[str] = None
+        redirect_url: Optional[str] = None,
+        force_reauth: bool = False
     ) -> Dict[str, Any]:
         """
         Initiate OAuth connection for an app.
@@ -62,11 +63,27 @@ class ComposioService:
             user_id: User's ID
             app_name: App to connect (e.g., 'gmail', 'slack')
             redirect_url: URL to redirect after OAuth
+            force_reauth: If True, disconnect existing connection first
 
         Returns:
             Dict with auth_url and connection info
         """
         try:
+            # First check if already connected
+            existing = self.get_connection(user_id, app_name)
+            if existing:
+                if force_reauth:
+                    # Disconnect existing connection first
+                    logger.info(f"Force reauth: disconnecting existing {app_name} for {user_id}")
+                    self.disconnect(user_id, app_name)
+                else:
+                    logger.info(f"User {user_id} already has {app_name} connected")
+                    return {
+                        "auth_url": None,
+                        "connection_id": existing.get("connection_id"),
+                        "status": "already_connected"
+                    }
+
             callback_url = redirect_url or f"{OAUTH_REDIRECT_BASE}/api/integrations/callback"
             auth_config_id = self._get_auth_config_id(app_name)
 
@@ -102,27 +119,68 @@ class ComposioService:
             Connection info or None if not connected
         """
         try:
-            connections = self.client.connected_accounts.list(user_id=user_id)
+            connections = self.client.connected_accounts.list(user_ids=user_id)
             app_lower = app_name.lower()
+            app_upper = app_name.upper()
+
+            # Get the auth_config_id for this app to match against
+            auth_config_id = AUTH_CONFIG_MAP.get(app_lower)
+
+            logger.info(f"Found {len(connections.items)} total connections for user {user_id}")
 
             for conn in connections.items:
-                # Check if this connection matches the app
-                conn_app = getattr(conn, 'toolkit', {})
-                if isinstance(conn_app, dict):
-                    conn_slug = conn_app.get('slug', '').lower()
-                else:
-                    conn_slug = getattr(conn_app, 'slug', '').lower() if conn_app else ''
+                # Log connection details for debugging
+                logger.info(f"Checking connection: id={conn.id}")
+                logger.info(f"Connection attributes: {dir(conn)}")
 
-                if conn_slug == app_lower:
+                # Try multiple ways to identify the app
+                conn_slug = None
+
+                # Method 1: Check toolkit.slug
+                conn_app = getattr(conn, 'toolkit', None)
+                logger.info(f"  toolkit: {conn_app} (type: {type(conn_app)})")
+                if conn_app:
+                    if isinstance(conn_app, dict):
+                        conn_slug = conn_app.get('slug', '').lower()
+                    else:
+                        conn_slug = getattr(conn_app, 'slug', '').lower() if hasattr(conn_app, 'slug') else None
+                    logger.info(f"  toolkit slug: {conn_slug}")
+
+                # Method 2: Check appName attribute
+                if not conn_slug:
+                    app_name_attr = getattr(conn, 'appName', None) or getattr(conn, 'app_name', None)
+                    logger.info(f"  appName: {app_name_attr}")
+                    if app_name_attr:
+                        conn_slug = str(app_name_attr).lower()
+
+                # Method 3: Check authConfigId matches our known config
+                if not conn_slug and auth_config_id:
+                    conn_auth_config = getattr(conn, 'authConfigId', None) or getattr(conn, 'auth_config_id', None)
+                    logger.info(f"  authConfigId: {conn_auth_config} (looking for: {auth_config_id})")
+                    if conn_auth_config == auth_config_id:
+                        conn_slug = app_lower
+
+                # Method 4: Check integrationId or similar
+                if not conn_slug:
+                    integration_id = getattr(conn, 'integrationId', None) or getattr(conn, 'integration_id', None)
+                    logger.info(f"  integrationId: {integration_id}")
+                    if integration_id and app_lower in str(integration_id).lower():
+                        conn_slug = app_lower
+
+                logger.info(f"Detected conn_slug: {conn_slug} for app: {app_lower}")
+
+                if conn_slug and conn_slug == app_lower:
                     return {
                         "connection_id": conn.id,
                         "status": getattr(conn, 'status', 'active'),
                         "app": app_name
                     }
+
+            logger.info(f"No matching connection found for {user_id}/{app_name}")
             return None
 
         except Exception as e:
-            logger.debug(f"No connection found for {user_id}/{app_name}: {e}")
+            logger.error(f"Error checking connection for {user_id}/{app_name}: {e}")
             return None
 
     def get_tools(self, user_id: str, apps: List[str]) -> List[Dict[str, Any]]:
@@ -215,10 +273,13 @@ class ComposioService:
         try:
             connection = self.get_connection(user_id, app_name)
             if connection and connection.get("connection_id"):
-                self.client.connected_accounts.delete(
-                    id=connection["connection_id"]
-                )
+                connection_id = connection["connection_id"]
+                logger.info(f"Disconnecting connection {connection_id} for {app_name}")
+                # Try positional argument first
+                self.client.connected_accounts.delete(connection_id)
+                logger.info(f"Successfully disconnected {app_name}")
                 return True
+            logger.warning(f"No connection found to disconnect for {user_id}/{app_name}")
             return False
 
         except Exception as e:

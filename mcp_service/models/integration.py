@@ -17,6 +17,7 @@ class IntegrationStatus(str, Enum):
 class IntegrationCreate(BaseModel):
     """Request model for creating an integration connection."""
     provider: str = Field(..., description="Integration provider (e.g., gmail, slack)")
+    force_reauth: bool = Field(default=False, description="Force re-authentication even if already connected")
 
 
 class Integration(BaseModel):
@@ -49,8 +50,9 @@ class IntegrationListResponse(BaseModel):
 
 class ConnectResponse(BaseModel):
     """Response model for connect request."""
-    auth_url: str
+    auth_url: Optional[str] = None
     message: str = "Redirect user to auth_url to complete connection"
+    status: Optional[str] = None  # "already_connected" if already connected
 
 
 class ToolExecuteRequest(BaseModel):
