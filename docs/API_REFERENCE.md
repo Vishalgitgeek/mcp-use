@@ -1,13 +1,13 @@
-# MCP Integration Service - Developer Documentation
+# MCP Integration Service - API Reference v2.0
 
 ## Overview
 
-The MCP Integration Service provides a unified API for AI agents to execute actions on behalf of users across multiple platforms (Gmail, Slack, etc.) using OAuth-based authentication managed by Composio.
+The MCP Integration Service provides a REST API for managing OAuth integrations and exposing tools to AI agents. All endpoints (except OAuth callbacks) require API key authentication.
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Your AI Agent │────▶│  MCP Service    │────▶│    Composio     │
-│                 │     │  (This API)     │     │  (OAuth + Exec) │
+│   Your Backend  │────▶│  MCP Service    │────▶│    Composio     │
+│   (OA Agent)    │     │  (This API)     │     │  (OAuth + Exec) │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
                                │
                                ▼
@@ -17,38 +17,27 @@ The MCP Integration Service provides a unified API for AI agents to execute acti
                         └─────────────────┘
 ```
 
-## Base URL
+**Base URL:** `https://mcp.openanalyst.com`
 
-```
-http://localhost:8001
-```
+---
 
 ## Authentication
 
-### Two Authentication Methods
+All endpoints require the `X-API-Key` header:
 
-| Method | Header | Used For |
-|--------|--------|----------|
-| JWT Token | `Authorization: Bearer <token>` | User UI operations |
-| API Key | `X-API-Key: <key>` | AI Agent operations |
-
-### Getting API Key
-
-Set `AGENT_API_KEY` in your `.env` file. This key is used by AI agents to authenticate.
-
-```bash
-AGENT_API_KEY=your_secure_api_key_here
 ```
+X-API-Key: your_agent_api_key
+```
+
+Set `AGENT_API_KEY` in your `.env` file. This key is used by your backend/agents to authenticate.
 
 ---
 
 ## API Endpoints
 
-### 1. Health Check
+### Health Check
 
-Check if the service is running.
-
-```
+```http
 GET /api/tools/health
 ```
 
@@ -58,30 +47,210 @@ GET /api/tools/health
 ```json
 {
   "status": "healthy",
-  "service": "mcp-integration-service"
+  "composio": "connected"
 }
 ```
 
 ---
 
-### 2. List User Tools
+## Integration Endpoints
 
-Get available tools for a specific user based on their connected integrations.
+### List Available Integrations
 
+```http
+GET /api/integrations
 ```
+
+**Headers:**
+- `X-API-Key` (required): Your API key
+
+**Response:**
+```json
+["gmail", "slack"]
+```
+
+---
+
+### List User's Connected Integrations
+
+```http
+GET /api/integrations/connected?user_id={user_id}
+```
+
+**Headers:**
+- `X-API-Key` (required): Your API key
+
+**Query Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| user_id | string | Yes | User ID from your system |
+
+**Example:**
+```bash
+curl -X GET "https://mcp.openanalyst.com/api/integrations/connected?user_id=user_123" \
+  -H "X-API-Key: your_api_key"
+```
+
+**Response:**
+```json
+{
+  "integrations": [
+    {
+      "provider": "gmail",
+      "status": "active",
+      "connected_email": "user@example.com",
+      "connected_at": "2024-01-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### Connect Integration (Initiate OAuth)
+
+```http
+POST /api/integrations/connect
+```
+
+**Headers:**
+- `X-API-Key` (required): Your API key
+- `Content-Type: application/json`
+
+**Request Body:**
+```json
+{
+  "user_id": "user_123",
+  "provider": "gmail",
+  "redirect_url": "https://your-app.com/oauth-complete",
+  "force_reauth": false
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| user_id | string | Yes | Your system's user ID |
+| provider | string | Yes | Integration provider (`gmail`, `slack`) |
+| redirect_url | string | No | URL to redirect after OAuth completion |
+| force_reauth | boolean | No | Force re-authentication (default: false) |
+
+**Example:**
+```bash
+curl -X POST "https://mcp.openanalyst.com/api/integrations/connect" \
+  -H "X-API-Key: your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "user_123",
+    "provider": "gmail",
+    "redirect_url": "https://your-app.com/oauth-done"
+  }'
+```
+
+**Response:**
+```json
+{
+  "auth_url": "https://accounts.google.com/oauth/...",
+  "message": "Redirect user to auth_url to connect gmail"
+}
+```
+
+If already connected:
+```json
+{
+  "auth_url": null,
+  "status": "already_connected",
+  "message": "gmail is already connected"
+}
+```
+
+---
+
+### Disconnect Integration
+
+```http
+POST /api/integrations/disconnect
+```
+
+**Headers:**
+- `X-API-Key` (required): Your API key
+- `Content-Type: application/json`
+
+**Request Body:**
+```json
+{
+  "user_id": "user_123",
+  "provider": "gmail"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "gmail disconnected successfully"
+}
+```
+
+---
+
+### Get Integration Status
+
+```http
+GET /api/integrations/{provider}/status?user_id={user_id}
+```
+
+**Headers:**
+- `X-API-Key` (required): Your API key
+
+**Path Parameters:**
+- `provider`: Integration provider (`gmail`, `slack`)
+
+**Query Parameters:**
+- `user_id` (required): User ID to check status for
+
+**Response:**
+```json
+{
+  "provider": "gmail",
+  "status": "active",
+  "connected_email": "user@example.com"
+}
+```
+
+---
+
+### OAuth Callback (Internal)
+
+```http
+GET /api/integrations/callback
+```
+
+This endpoint is called by Composio after OAuth completion. **No API key required.**
+
+After OAuth, redirects to your `redirect_url` with query params:
+- `?connected={provider}&status=success` on success
+- `?error={error_message}` on failure
+
+---
+
+## Tools Endpoints
+
+### List User's Available Tools
+
+```http
 GET /api/tools?user_id={user_id}
 ```
 
-**Authentication:** `X-API-Key` header
+**Headers:**
+- `X-API-Key` (required): Your API key
 
-**Parameters:**
+**Query Parameters:**
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| user_id | string | Yes | The user's ID (from Google OAuth) |
+| user_id | string | Yes | User ID to get tools for |
 
-**Example Request:**
+**Example:**
 ```bash
-curl -X GET "http://localhost:8001/api/tools?user_id=110610502660943882433" \
+curl -X GET "https://mcp.openanalyst.com/api/tools?user_id=user_123" \
   -H "X-API-Key: your_api_key"
 ```
 
@@ -109,20 +278,20 @@ curl -X GET "http://localhost:8001/api/tools?user_id=110610502660943882433" \
 
 ---
 
-### 3. Execute Tool
+### Execute Tool
 
-Execute an action on behalf of a user.
-
-```
+```http
 POST /api/tools/execute
 ```
 
-**Authentication:** `X-API-Key` header
+**Headers:**
+- `X-API-Key` (required): Your API key
+- `Content-Type: application/json`
 
 **Request Body:**
 ```json
 {
-  "user_id": "110610502660943882433",
+  "user_id": "user_123",
   "action": "GMAIL_SEND_EMAIL",
   "params": {
     "recipient_email": "recipient@example.com",
@@ -132,38 +301,20 @@ POST /api/tools/execute
 }
 ```
 
-**Parameters:**
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| user_id | string | Yes | The user's ID |
+| user_id | string | Yes | User ID to execute tool for |
 | action | string | Yes | Action name (e.g., `GMAIL_SEND_EMAIL`) |
 | params | object | Yes | Action-specific parameters |
-
-**Example Request:**
-```bash
-curl -X POST "http://localhost:8001/api/tools/execute" \
-  -H "X-API-Key: your_api_key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "user_id": "110610502660943882433",
-    "action": "GMAIL_SEND_EMAIL",
-    "params": {
-      "recipient_email": "test@example.com",
-      "subject": "Test",
-      "body": "Hello from MCP!"
-    }
-  }'
-```
 
 **Success Response:**
 ```json
 {
   "success": true,
   "result": {
-    "id": "18c5f5d1a2b3c4d5",
-    "threadId": "18c5f5d1a2b3c4d5"
-  },
-  "error": null
+    "messageId": "abc123",
+    "threadId": "xyz789"
+  }
 }
 ```
 
@@ -171,33 +322,23 @@ curl -X POST "http://localhost:8001/api/tools/execute" \
 ```json
 {
   "success": false,
-  "result": null,
   "error": "User does not have gmail connected"
 }
 ```
 
 ---
 
-### 4. List Provider Actions
+### List Provider Actions
 
-Get available actions for a specific provider.
-
-```
+```http
 GET /api/tools/actions/{provider}
 ```
 
-**Authentication:** `X-API-Key` header
+**Headers:**
+- `X-API-Key` (required): Your API key
 
-**Parameters:**
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| provider | string | Yes | Provider name (`gmail`, `slack`) |
-
-**Example Request:**
-```bash
-curl -X GET "http://localhost:8001/api/tools/actions/gmail" \
-  -H "X-API-Key: your_api_key"
-```
+**Path Parameters:**
+- `provider`: Provider name (`gmail`, `slack`)
 
 **Response:**
 ```json
@@ -205,9 +346,7 @@ curl -X GET "http://localhost:8001/api/tools/actions/gmail" \
   "provider": "gmail",
   "actions": [
     {"name": "GMAIL_SEND_EMAIL", "description": "Send an email"},
-    {"name": "GMAIL_FETCH_EMAILS", "description": "Fetch/search emails with optional query filter"},
-    {"name": "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", "description": "Get a specific email by message ID"},
-    {"name": "GMAIL_CREATE_EMAIL_DRAFT", "description": "Create an email draft"}
+    {"name": "GMAIL_FETCH_EMAILS", "description": "Fetch emails"}
   ]
 }
 ```
@@ -223,9 +362,7 @@ curl -X GET "http://localhost:8001/api/tools/actions/gmail" \
 | `GMAIL_SEND_EMAIL` | Send an email | `recipient_email`, `subject`, `body` |
 | `GMAIL_FETCH_EMAILS` | Fetch/search emails | None (optional: `query`, `max_results`) |
 | `GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID` | Get specific email | `message_id` |
-| `GMAIL_FETCH_MESSAGE_BY_THREAD_ID` | Get thread messages | `thread_id` |
 | `GMAIL_CREATE_EMAIL_DRAFT` | Create draft | `recipient_email`, `subject`, `body` |
-| `GMAIL_ADD_LABEL_TO_EMAIL` | Modify labels | `message_id` |
 | `GMAIL_LIST_LABELS` | List all labels | None |
 | `GMAIL_DELETE_MESSAGE` | Delete email | `message_id` |
 
@@ -244,17 +381,7 @@ curl -X GET "http://localhost:8001/api/tools/actions/gmail" \
 ```json
 {
   "max_results": 10,
-  "query": "from:user@example.com is:unread",
-  "label_ids": ["INBOX", "UNREAD"],
-  "include_spam_trash": false
-}
-```
-
-#### GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID
-```json
-{
-  "message_id": "18c5f5d1a2b3c4d5",
-  "format": "full"
+  "query": "from:user@example.com is:unread"
 }
 ```
 
@@ -263,9 +390,8 @@ curl -X GET "http://localhost:8001/api/tools/actions/gmail" \
 | Action | Description | Required Parameters |
 |--------|-------------|---------------------|
 | `SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL` | Send message | `channel`, `text` |
-| `SLACK_LIST_ALL_SLACK_TEAM_CHANNELS_WITH_PAGINATION` | List channels | None |
-| `SLACK_FETCHES_CONVERSATION_HISTORY` | Get channel history | `channel` |
-| `SLACK_SEARCH_MESSAGES_IN_SLACK` | Search messages | `query` |
+| `SLACK_LIST_ALL_SLACK_TEAM_CHANNELS` | List channels | None |
+| `SLACK_SEARCH_MESSAGES` | Search messages | `query` |
 
 ### Slack Action Parameters
 
@@ -279,163 +405,80 @@ curl -X GET "http://localhost:8001/api/tools/actions/gmail" \
 
 ---
 
-## User Management Endpoints
+## Integration Flow
 
-### 5. List User Integrations
-
-Get all integrations for the authenticated user.
+### 1. Connect a User's Account
 
 ```
-GET /api/integrations
+Your Backend                    MCP Service                    Composio
+    |                               |                               |
+    |-- POST /connect ------------->|                               |
+    |   {user_id, provider}         |                               |
+    |                               |                               |
+    |<-- {auth_url} ----------------|                               |
+    |                               |                               |
+    |-- Redirect user to auth_url --------------------------------->|
+    |                               |                               |
+    |                               |<-- OAuth callback ------------|
+    |                               |                               |
+    |<-- Redirect to your app ------|                               |
+    |   ?connected=gmail            |                               |
 ```
 
-**Authentication:** `Authorization: Bearer <jwt_token>`
-
-**Response:**
-```json
-{
-  "integrations": [
-    {
-      "provider": "gmail",
-      "status": "active",
-      "connected_email": "user@gmail.com",
-      "connected_at": "2024-01-15T10:30:00Z"
-    },
-    {
-      "provider": "slack",
-      "status": "pending",
-      "connected_email": null,
-      "connected_at": null
-    }
-  ]
-}
-```
-
-### 6. Connect Integration
-
-Initiate OAuth flow for a provider.
+### 2. Use Tools
 
 ```
-POST /api/integrations/connect
-```
-
-**Authentication:** `Authorization: Bearer <jwt_token>`
-
-**Request Body:**
-```json
-{
-  "provider": "gmail",
-  "force_reauth": false
-}
-```
-
-**Response:**
-```json
-{
-  "auth_url": "https://accounts.google.com/o/oauth2/auth?...",
-  "message": "Redirect user to auth_url to complete connection"
-}
-```
-
-### 7. Disconnect Integration
-
-Remove an integration connection.
-
-```
-DELETE /api/integrations/{provider}
-```
-
-**Authentication:** `Authorization: Bearer <jwt_token>`
-
-**Response:**
-```json
-{
-  "message": "Successfully disconnected gmail"
-}
+Your AI Agent                   MCP Service                    Gmail/Slack
+    |                               |                               |
+    |-- GET /tools?user_id=xxx ---->|                               |
+    |                               |                               |
+    |<-- {tools: [...]} ------------|                               |
+    |                               |                               |
+    |-- POST /tools/execute ------->|                               |
+    |   {user_id, action, params}   |-- Execute action ------------>|
+    |                               |                               |
+    |<-- {success, result} ---------|<-- Result --------------------|
 ```
 
 ---
 
-## Integration Guide for AI Agents
-
-### Step 1: Fetch Available Tools
+## Complete Integration Example
 
 ```python
 import requests
 
-API_BASE = "http://localhost:8001"
 API_KEY = "your_agent_api_key"
-USER_ID = "110610502660943882433"
+BASE_URL = "https://mcp.openanalyst.com"
+HEADERS = {"X-API-Key": API_KEY}
 
-# Get tools with full schemas from Composio
-response = requests.get(
-    f"{API_BASE}/api/tools",
-    params={"user_id": USER_ID},
-    headers={"X-API-Key": API_KEY}
-)
-tools = response.json()["tools"]
-```
-
-### Step 2: Convert to OpenAI Function Format
-
-```python
-openai_tools = []
-for tool in tools:
-    openai_tools.append({
-        "type": "function",
-        "function": {
-            "name": tool["name"],
-            "description": tool["description"],
-            "parameters": tool["parameters"]
-        }
-    })
-```
-
-### Step 3: Use with OpenAI
-
-```python
-from openai import OpenAI
-
-client = OpenAI()
-
-response = client.chat.completions.create(
-    model="gpt-4",
-    messages=[
-        {"role": "system", "content": "You help users manage email and Slack."},
-        {"role": "user", "content": "Send an email to bob@example.com saying hello"}
-    ],
-    tools=openai_tools,
-    tool_choice="auto"
-)
-
-# If GPT-4 wants to call a function
-if response.choices[0].message.tool_calls:
-    tool_call = response.choices[0].message.tool_calls[0]
-    function_name = tool_call.function.name
-    arguments = json.loads(tool_call.function.arguments)
-
-    # Execute via MCP Service
-    result = requests.post(
-        f"{API_BASE}/api/tools/execute",
-        headers={"X-API-Key": API_KEY, "Content-Type": "application/json"},
-        json={
-            "user_id": USER_ID,
-            "action": function_name,
-            "params": arguments
-        }
-    )
-    print(result.json())
-```
-
-### Complete Integration Example
-
-```python
 class MCPClient:
     def __init__(self, api_base: str, api_key: str):
         self.api_base = api_base
         self.headers = {"X-API-Key": api_key}
 
-    def get_tools(self, user_id: str) -> list:
+    def connect_integration(self, user_id: str, provider: str, redirect_url: str = None):
+        """Initiate OAuth connection for a user."""
+        resp = requests.post(
+            f"{self.api_base}/api/integrations/connect",
+            headers={**self.headers, "Content-Type": "application/json"},
+            json={
+                "user_id": user_id,
+                "provider": provider,
+                "redirect_url": redirect_url
+            }
+        )
+        return resp.json()
+
+    def get_connected(self, user_id: str):
+        """Get user's connected integrations."""
+        resp = requests.get(
+            f"{self.api_base}/api/integrations/connected",
+            params={"user_id": user_id},
+            headers=self.headers
+        )
+        return resp.json()
+
+    def get_tools(self, user_id: str):
         """Fetch available tools for a user."""
         resp = requests.get(
             f"{self.api_base}/api/tools",
@@ -444,7 +487,7 @@ class MCPClient:
         )
         return resp.json()["tools"]
 
-    def execute(self, user_id: str, action: str, params: dict) -> dict:
+    def execute(self, user_id: str, action: str, params: dict):
         """Execute a tool action."""
         resp = requests.post(
             f"{self.api_base}/api/tools/execute",
@@ -453,14 +496,33 @@ class MCPClient:
         )
         return resp.json()
 
-# Usage
-client = MCPClient("http://localhost:8001", "your_api_key")
-tools = client.get_tools("110610502660943882433")
+
+# Usage Example
+client = MCPClient("https://mcp.openanalyst.com", "your_api_key")
+
+# 1. Connect Gmail for a user (redirect user to auth_url)
+result = client.connect_integration("user_123", "gmail", "https://your-app.com/done")
+print(f"Redirect user to: {result['auth_url']}")
+
+# 2. After OAuth, check connected integrations
+connected = client.get_connected("user_123")
+print(f"Connected: {connected}")
+
+# 3. Get available tools
+tools = client.get_tools("user_123")
+print(f"Available tools: {[t['name'] for t in tools]}")
+
+# 4. Execute a tool
 result = client.execute(
-    "110610502660943882433",
+    "user_123",
     "GMAIL_SEND_EMAIL",
-    {"recipient_email": "bob@example.com", "subject": "Hi", "body": "Hello!"}
+    {
+        "recipient_email": "bob@example.com",
+        "subject": "Hello",
+        "body": "This email was sent via MCP!"
+    }
 )
+print(f"Result: {result}")
 ```
 
 ---
@@ -471,8 +533,9 @@ result = client.execute(
 |-----------|---------|
 | 200 | Success |
 | 400 | Bad request (invalid parameters) |
-| 401 | Unauthorized (invalid API key or token) |
+| 401 | Unauthorized (invalid or missing API key) |
 | 404 | Not found (unknown provider or action) |
+| 422 | Validation error (missing required fields) |
 | 500 | Server error |
 
 ## Error Response Format
@@ -495,9 +558,7 @@ result = client.execute(
 | `MONGODB_DB_NAME` | Database name | No (default: `mcp_integrations`) |
 | `MCP_SERVICE_HOST` | Service host | No (default: `0.0.0.0`) |
 | `MCP_SERVICE_PORT` | Service port | No (default: `8001`) |
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID | Yes |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | Yes |
-| `JWT_SECRET` | Secret for JWT signing | Yes |
+| `OAUTH_REDIRECT_BASE` | Base URL for OAuth redirects | Yes |
 
 ---
 

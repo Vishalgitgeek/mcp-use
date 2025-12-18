@@ -16,8 +16,16 @@ class IntegrationStatus(str, Enum):
 
 class IntegrationCreate(BaseModel):
     """Request model for creating an integration connection."""
+    user_id: str = Field(..., description="User ID from your system")
     provider: str = Field(..., description="Integration provider (e.g., gmail, slack)")
+    redirect_url: Optional[str] = Field(None, description="URL to redirect after OAuth completion")
     force_reauth: bool = Field(default=False, description="Force re-authentication even if already connected")
+
+
+class DisconnectRequest(BaseModel):
+    """Request model for disconnecting an integration."""
+    user_id: str = Field(..., description="User ID from your system")
+    provider: str = Field(..., description="Integration provider to disconnect")
 
 
 class Integration(BaseModel):

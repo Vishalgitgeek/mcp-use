@@ -7,31 +7,38 @@ from ..models.integration import (
     IntegrationCreate,
     IntegrationResponse,
     IntegrationListResponse,
-    ConnectResponse
+    ConnectResponse,
+    DisconnectRequest
 )
 from ..services.integration_service import get_integration_service
 from ..config import SUPPORTED_INTEGRATIONS, OAUTH_REDIRECT_BASE
-from .auth import verify_user_token
+from .auth import verify_api_key
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
 
 @router.get("", response_model=list[str])
-async def list_available_integrations():
+async def list_available_integrations(
+    _: str = Depends(verify_api_key)
+):
     """
     List all available integrations.
 
+    Requires X-API-Key header.
     Returns list of supported integration provider names.
     """
     return SUPPORTED_INTEGRATIONS
 
 
 @router.get("/connected", response_model=IntegrationListResponse)
-async def list_connected_integrations(user_id: str = Depends(verify_user_token)):
+async def list_connected_integrations(
+    user_id: str = Query(..., description="User ID to get integrations for"),
+    _: str = Depends(verify_api_key)
+):
     """
     List user's connected integrations.
 
-    Requires user authentication.
+    Requires X-API-Key header and user_id query parameter.
     """
     service = get_integration_service()
     integrations = await service.get_user_integrations(user_id)
@@ -52,14 +59,16 @@ async def list_connected_integrations(user_id: str = Depends(verify_user_token))
 @router.post("/connect", response_model=ConnectResponse)
 async def initiate_connection(
     request: IntegrationCreate,
-    user_id: str = Depends(verify_user_token)
+    _: str = Depends(verify_api_key)
 ):
     """
     Initiate OAuth connection for an integration.
 
+    Requires X-API-Key header.
     Returns an auth_url that the user should be redirected to.
     """
     provider = request.provider.lower()
+    user_id = request.user_id
 
     if provider not in SUPPORTED_INTEGRATIONS:
         raise HTTPException(
@@ -73,6 +82,7 @@ async def initiate_connection(
         result = await service.initiate_connection(
             user_id,
             provider,
+            redirect_url=request.redirect_url,
             force_reauth=request.force_reauth
         )
 
@@ -102,117 +112,67 @@ async def oauth_callback(
     connectedAccountId: Optional[str] = None,
     appName: Optional[str] = None,
     error: Optional[str] = None,
-    error_description: Optional[str] = None
+    error_description: Optional[str] = None,
+    redirect_url: Optional[str] = None
 ):
     """
     OAuth callback endpoint.
 
     Composio will redirect here after user completes OAuth.
+    No API key required - this is called by Composio/OAuth provider.
     """
+    # Determine where to redirect after callback
+    final_redirect = redirect_url or OAUTH_REDIRECT_BASE
+
     if error:
         # OAuth error
         return RedirectResponse(
-            url=f"{OAUTH_REDIRECT_BASE}/?error={error}"
+            url=f"{final_redirect}?error={error}"
         )
 
     # Composio sends: status=success&connectedAccountId=xxx&appName=gmail
     if status == "success" and appName:
         return RedirectResponse(
-            url=f"{OAUTH_REDIRECT_BASE}/?connected={appName}"
+            url=f"{final_redirect}?connected={appName}&status=success"
         )
 
-    # Fallback - redirect to home
-    return RedirectResponse(url=f"{OAUTH_REDIRECT_BASE}/")
+    # Fallback - redirect with status
+    return RedirectResponse(url=f"{final_redirect}?status=callback_received")
 
 
-@router.post("/callback/complete")
-async def complete_connection(
-    provider: str,
-    connected_email: Optional[str] = None,
-    user_id: str = Depends(verify_user_token)
-):
-    """
-    Manually complete a connection after OAuth callback.
-
-    Called by frontend after OAuth redirect to update status.
-    """
-    service = get_integration_service()
-
-    try:
-        result = await service.complete_connection(
-            user_id=user_id,
-            provider=provider,
-            connected_email=connected_email
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/debug/connections")
-async def debug_list_all_connections(user_id: str = Depends(verify_user_token)):
-    """
-    Debug endpoint: List all raw Composio connections for user.
-    """
-    from ..services.composio_service import get_composio_service
-
-    composio = get_composio_service()
-
-    try:
-        connections = composio.client.connected_accounts.list(user_ids=user_id)
-        result = []
-        for conn in connections.items:
-            # Capture all attributes
-            conn_data = {
-                "id": conn.id,
-                "attributes": dir(conn),
-            }
-            # Try to get common attributes
-            for attr in ['toolkit', 'appName', 'app_name', 'authConfigId', 'auth_config_id',
-                        'integrationId', 'integration_id', 'status', 'connectionParams']:
-                conn_data[attr] = getattr(conn, attr, None)
-                # If it's an object, try to get its dict
-                if hasattr(conn_data[attr], '__dict__'):
-                    conn_data[attr] = str(conn_data[attr].__dict__)
-
-            result.append(conn_data)
-
-        return {"user_id": user_id, "connections": result, "count": len(result)}
-
-    except Exception as e:
-        return {"error": str(e)}
-
-
-@router.delete("/{provider}")
+@router.post("/disconnect")
 async def disconnect_integration(
-    provider: str,
-    user_id: str = Depends(verify_user_token)
+    request: DisconnectRequest,
+    _: str = Depends(verify_api_key)
 ):
     """
     Disconnect an integration.
+
+    Requires X-API-Key header.
     """
     service = get_integration_service()
 
-    success = await service.disconnect(user_id, provider)
+    success = await service.disconnect(request.user_id, request.provider)
 
     if not success:
         raise HTTPException(
             status_code=404,
-            detail=f"No {provider} integration found for user"
+            detail=f"No {request.provider} integration found for user"
         )
 
-    return {"message": f"{provider} disconnected successfully"}
+    return {"message": f"{request.provider} disconnected successfully"}
 
 
 @router.get("/{provider}/status")
 async def get_integration_status(
     provider: str,
-    user_id: str = Depends(verify_user_token)
+    user_id: str = Query(..., description="User ID to check status for"),
+    _: str = Depends(verify_api_key)
 ):
     """
     Get status of a specific integration.
+
+    Requires X-API-Key header and user_id query parameter.
     """
     service = get_integration_service()
     integration = await service.get_integration(user_id, provider)

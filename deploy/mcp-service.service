@@ -1,0 +1,27 @@
+[Unit]
+Description=MCP Integration Service
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/mcp-service
+Environment="PATH=/opt/mcp-service/venv/bin"
+EnvironmentFile=/opt/mcp-service/.env
+ExecStart=/opt/mcp-service/venv/bin/python -m mcp_service.main
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mcp-service
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
