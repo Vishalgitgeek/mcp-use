@@ -142,6 +142,50 @@ async def list_provider_actions(
     }
 
 
+@router.get("/schema/{action}")
+async def get_action_schema(
+    action: str,
+    user_id: str,
+    _: str = Depends(verify_api_key)
+):
+    """
+    Get the parameter schema for a specific action from Composio.
+
+    Args:
+        action: Action name (e.g., 'GMAIL_SEND_EMAIL')
+        user_id: User ID to fetch schema for
+
+    Returns:
+        Action schema with parameters from Composio
+    """
+    from ..services.composio_service import get_composio_service
+
+    provider = action.split("_")[0].lower()
+
+    try:
+        composio = get_composio_service()
+        entity_id = f"user_{user_id}"
+        tools = composio.client.tools.get(
+            user_id=entity_id,
+            toolkits=[provider.upper()]
+        )
+
+        for tool in tools:
+            if getattr(tool, 'name', '') == action:
+                return {
+                    "action": action,
+                    "description": getattr(tool, 'description', ''),
+                    "parameters": getattr(tool, 'parameters', {})
+                }
+
+        raise HTTPException(status_code=404, detail=f"Action not found: {action}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch schema: {str(e)}")
+
+
 @router.get("/health")
 async def health_check():
     """
