@@ -113,7 +113,8 @@ async def oauth_callback(
     appName: Optional[str] = None,
     error: Optional[str] = None,
     error_description: Optional[str] = None,
-    redirect_url: Optional[str] = None
+    redirect_url: Optional[str] = None,
+    entity_id: Optional[str] = None
 ):
     """
     OAuth callback endpoint.
@@ -130,8 +131,23 @@ async def oauth_callback(
             url=f"{final_redirect}?error={error}"
         )
 
-    # Composio sends: status=success&connectedAccountId=xxx&appName=gmail
+    # Composio sends: status=success&connectedAccountId=xxx&appName=gmail&entity_id=user_xxx
     if status == "success" and appName:
+        # Extract user_id from entity_id (entity_id is "user_{user_id}")
+        if entity_id and entity_id.startswith("user_"):
+            user_id = entity_id.replace("user_", "")
+            provider = appName.lower()
+            
+            # Update MongoDB to mark integration as active
+            try:
+                service = get_integration_service()
+                await service.complete_connection(user_id, provider)
+            except Exception as e:
+                # Log error but don't fail the redirect
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error completing connection in MongoDB: {e}")
+        
         return RedirectResponse(
             url=f"{final_redirect}?connected={appName}&status=success"
         )

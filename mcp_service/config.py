@@ -25,7 +25,7 @@ SERVER_PORT = int(os.getenv("MCP_SERVICE_PORT", "8001"))
 AGENT_API_KEY = os.getenv("AGENT_API_KEY", "")
 
 # Supported integrations (initial set)
-SUPPORTED_INTEGRATIONS = ["gmail", "slack"]
+SUPPORTED_INTEGRATIONS = ["gmail", "slack", "docs", "sheet", "drive", "github", "bitbucket", "youtube"]
 
 # OAuth Redirect Base URL
 OAUTH_REDIRECT_BASE = os.getenv("OAUTH_REDIRECT_BASE", "http://localhost:8001")

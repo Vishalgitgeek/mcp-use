@@ -1,19 +1,44 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-python-dotenv==1.0.0
-langchain-openai==0.0.2
-openai>=1.0.0
-requests>=2.31.0
-mcp-use
-google-auth==2.23.4
-google-auth-oauthlib==1.1.0
-google-auth-httplib2==0.1.1
-google-api-python-client==2.108.0
-
-# MCP Integration Service (New)
-composio
-pymongo
-motor
+# ============================================
+# Core Web Framework & Server
+# ============================================
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
 pydantic>=2.0
-PyJWT>=2.8.0
 
+# ============================================
+# Database
+# ============================================
+pymongo>=4.6.0
+motor>=3.3.0  # Async MongoDB driver
+
+# ============================================
+# Environment & Configuration
+# ============================================
+python-dotenv>=1.0.0
+
+# ============================================
+# MCP Integration Service
+# ============================================
+composio>=0.3.0  # Main integration SDK
+PyJWT>=2.8.0     # JWT authentication
+
+# ============================================
+# HTTP & Requests
+# ============================================
+requests>=2.31.0
+httpx>=0.25.0
+
+# ============================================
+# Google Services (Optional - if needed)
+# ============================================
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+google-api-python-client>=2.108.0
+
+# ============================================
+# AI & LangChain (Optional - if needed)
+# ============================================
+# Uncomment if you need OpenAI/LangChain integration
+# openai>=1.0.0
+# langchain-openai>=0.0.2

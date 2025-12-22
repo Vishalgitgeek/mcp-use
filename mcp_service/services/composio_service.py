@@ -7,15 +7,14 @@ from composio import Composio
 from composio.exceptions import ComposioError
 
 from ..config import COMPOSIO_API_KEY, OAUTH_REDIRECT_BASE
+from ..tools_config import get_enabled_tools
 
 logger = logging.getLogger(__name__)
 
-# Auth config IDs from your Composio account
-# These are found via: c.auth_configs.list()
-AUTH_CONFIG_MAP = {
-    "gmail": "ac_24DkR_l4gcsg",
-    "slack": "ac_EEgx5VnWdJz_",
-}
+# Import auth config from centralized tools_config
+# This is now managed in tools_config.py
+AUTH_CONFIG_MAP = get_enabled_tools()
+
 
 
 class ComposioService:

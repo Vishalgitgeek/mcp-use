@@ -95,51 +95,134 @@ async def execute_tool(
 @router.get("/actions/{provider}")
 async def list_provider_actions(
     provider: str,
+    include_schema: bool = True,
     _: str = Depends(verify_api_key)
 ):
     """
-    List available actions for a specific provider.
+    List available actions for a specific provider with full schemas.
 
-    Useful for the AI agent to know what actions are available
-    for a specific integration type.
+    Fetches actions from actions_config.py and enriches them with
+    parameter schemas from Composio API.
 
     Args:
         provider: Integration provider (e.g., 'gmail', 'slack')
+        include_schema: Whether to include request/response schemas (default: True)
 
     Returns:
-        List of available actions for the provider
+        List of available actions with their schemas
     """
-    # Common actions for supported providers (using actual Composio action names)
-    provider_actions = {
-        "gmail": [
-            {"name": "GMAIL_SEND_EMAIL", "description": "Send an email"},
-            {"name": "GMAIL_FETCH_EMAILS", "description": "Fetch/search emails with optional query filter"},
-            {"name": "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", "description": "Get a specific email by message ID"},
-            {"name": "GMAIL_FETCH_MESSAGE_BY_THREAD_ID", "description": "Get all messages in a thread"},
-            {"name": "GMAIL_CREATE_EMAIL_DRAFT", "description": "Create an email draft"},
-            {"name": "GMAIL_ADD_LABEL_TO_EMAIL", "description": "Add or remove labels from an email"},
-            {"name": "GMAIL_LIST_LABELS", "description": "List all Gmail labels"},
-            {"name": "GMAIL_DELETE_MESSAGE", "description": "Permanently delete an email"},
-        ],
-        "slack": [
-            {"name": "SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL", "description": "Send a message to a channel"},
-            {"name": "SLACK_LIST_ALL_SLACK_TEAM_CHANNELS_WITH_PAGINATION", "description": "List available channels"},
-            {"name": "SLACK_FETCHES_CONVERSATION_HISTORY", "description": "Get channel message history"},
-            {"name": "SLACK_SEARCH_MESSAGES_IN_SLACK", "description": "Search for messages"},
-        ]
-    }
-
+    from ..actions_config import get_provider_actions, is_provider_supported
+    import requests
+    import os
+    
     provider_lower = provider.lower()
-    if provider_lower not in provider_actions:
+    
+    # Check if provider is supported
+    if not is_provider_supported(provider_lower):
         raise HTTPException(
             status_code=404,
-            detail=f"Unknown provider: {provider}"
+            detail=f"Unknown provider: {provider}. No actions defined for this provider."
         )
-
-    return {
-        "provider": provider_lower,
-        "actions": provider_actions[provider_lower]
-    }
+    
+    try:
+        # Get actions from config
+        actions = get_provider_actions(provider_lower)
+        
+        # If schema is not requested, return basic actions
+        if not include_schema:
+            return {
+                "provider": provider_lower,
+                "actions": actions,
+                "schema_included": False,
+                "total_actions": len(actions)
+            }
+        
+        # Fetch schemas from Composio API
+        composio_api_key = os.getenv("COMPOSIO_API_KEY")
+        if not composio_api_key:
+            # If no Composio key, return without schemas
+            return {
+                "provider": provider_lower,
+                "actions": actions,
+                "schema_included": False,
+                "total_actions": len(actions),
+                "note": "COMPOSIO_API_KEY not configured - schemas unavailable"
+            }
+        
+        # Fetch all action schemas from Composio
+        composio_url = "https://backend.composio.dev/api/v2/actions"
+        headers = {"X-API-Key": composio_api_key}
+        params = {"apps": provider_lower}
+        
+        try:
+            response = requests.get(composio_url, headers=headers, params=params, timeout=30)
+            
+            if response.status_code == 200:
+                composio_data = response.json()
+                # Create lookup map by action name
+                composio_actions = {
+                    item["name"]: item 
+                    for item in composio_data.get("items", [])
+                }
+                
+                # Enrich actions with schemas
+                enriched_actions = []
+                for action in actions:
+                    action_name = action["name"]
+                    enriched = {
+                        "name": action_name,
+                        "description": action["description"]
+                    }
+                    
+                    # Add schema if available
+                    if action_name in composio_actions:
+                        composio_action = composio_actions[action_name]
+                        
+                        # Request schema
+                        if "parameters" in composio_action:
+                            params_data = composio_action["parameters"]
+                            enriched["request_schema"] = {
+                                "type": params_data.get("type", "object"),
+                                "properties": params_data.get("properties", {}),
+                                "required": params_data.get("required", [])
+                            }
+                        
+                        # Response schema
+                        if "response" in composio_action:
+                            response_data = composio_action["response"]
+                            enriched["response_schema"] = {
+                                "type": response_data.get("type", "object"),
+                                "properties": response_data.get("properties", {})
+                            }
+                    
+                    enriched_actions.append(enriched)
+                
+                return {
+                    "provider": provider_lower,
+                    "actions": enriched_actions,
+                    "schema_included": True,
+                    "total_actions": len(enriched_actions)
+                }
+                
+        except requests.RequestException as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to fetch schemas from Composio: {e}")
+            
+            # Fallback to basic actions
+            return {
+                "provider": provider_lower,
+                "actions": actions,
+                "schema_included": False,
+                "total_actions": len(actions),
+                "error": f"Failed to fetch schemas: {str(e)}"
+            }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get actions for {provider}: {str(e)}"
+        )
 
 
 @router.get("/schema/{action}")
