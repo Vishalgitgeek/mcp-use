@@ -12,22 +12,67 @@ from ..models.integration import (
 )
 from ..services.integration_service import get_integration_service
 from ..config import SUPPORTED_INTEGRATIONS, OAUTH_REDIRECT_BASE
+from ..tools_config import TOOL_METADATA
 from .auth import verify_api_key
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
 
-@router.get("", response_model=list[str])
+@router.get("")
 async def list_available_integrations(
+    detailed: bool = True,
     _: str = Depends(verify_api_key)
 ):
     """
     List all available integrations.
 
     Requires X-API-Key header.
-    Returns list of supported integration provider names.
+
+    Args:
+        detailed: If True (default), returns full details with descriptions.
+                  If False, returns simple list of provider names.
+
+    Returns:
+        List of integrations with name, description, and category (or simple list)
     """
-    return SUPPORTED_INTEGRATIONS
+    if not detailed:
+        return SUPPORTED_INTEGRATIONS
+
+    # Helper to generate display name from provider key
+    def get_display_name(provider: str) -> str:
+        # Handle special cases like "googledocs" -> "Google Docs"
+        name_map = {
+            "gmail": "Gmail",
+            "slack": "Slack",
+            "whatsapp": "WhatsApp",
+            "googledocs": "Google Docs",
+            "googlesheets": "Google Sheets",
+            "googledrive": "Google Drive",
+            "googlebigquery": "Google BigQuery",
+            "googlemeet": "Google Meet",
+            "googleads": "Google Ads",
+            "googlemaps": "Google Maps",
+            "zoom": "Zoom",
+            "youtube": "YouTube",
+            "supabase": "Supabase",
+            "linkedin": "LinkedIn",
+            "facebook": "Facebook",
+            "stripe": "Stripe",
+        }
+        return name_map.get(provider, provider.title())
+
+    return {
+        "integrations": [
+            {
+                "provider": provider,
+                "name": get_display_name(provider),
+                "description": TOOL_METADATA.get(provider, {}).get("description", ""),
+                "category": TOOL_METADATA.get(provider, {}).get("category", "").title()
+            }
+            for provider in SUPPORTED_INTEGRATIONS
+        ],
+        "total": len(SUPPORTED_INTEGRATIONS)
+    }
 
 
 @router.get("/connected", response_model=IntegrationListResponse)
@@ -113,8 +158,8 @@ async def oauth_callback(
     appName: Optional[str] = None,
     error: Optional[str] = None,
     error_description: Optional[str] = None,
-    redirect_url: Optional[str] = None,
-    entity_id: Optional[str] = None
+    session_id: Optional[str] = None
+
 ):
     """
     OAuth callback endpoint.
@@ -122,38 +167,90 @@ async def oauth_callback(
     Composio will redirect here after user completes OAuth.
     No API key required - this is called by Composio/OAuth provider.
     """
-    # Determine where to redirect after callback
-    final_redirect = redirect_url or OAUTH_REDIRECT_BASE
+    import logging
+    from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
+    from ..services.integration_service import get_oauth_session
+
+    logger = logging.getLogger("mcp.oauth")
+
+    logger.info(f"OAuth callback received: status={status}, appName={appName}, "
+                f"connectedAccountId={connectedAccountId}, session_id={session_id}")
+
+    service = get_integration_service()
+
+    # ============================================================
+    # Session-based redirect URL lookup (PRIMARY METHOD)
+    # ============================================================
+    # The session_id is passed in the callback URL we gave to Composio
+    # It maps to the user's desired redirect_url stored in MongoDB
+    # ============================================================
+
+    final_redirect = None
+
+    # Primary method: Look up by session_id
+    if session_id:
+        session = await get_oauth_session(session_id)
+        if session:
+            final_redirect = session.get("redirect_url")
+            logger.info(f"Retrieved redirect_url from session {session_id}: {final_redirect}")
+        else:
+            logger.warning(f"Session {session_id} not found - may have expired")
+
+    # Fallback: Use default redirect
+    if not final_redirect:
+        final_redirect = OAUTH_REDIRECT_BASE
+        logger.info(f"No session redirect found, using default: {final_redirect}")
+
+    # Ensure redirect URL has a proper protocol (https:// or http://)
+    # Without protocol, browser treats it as a relative path
+    if final_redirect and not final_redirect.startswith(('http://', 'https://')):
+        final_redirect = f"https://{final_redirect}"
+        logger.info(f"Added https:// to redirect URL: {final_redirect}")
+
+    # Helper function to append query params to URL properly
+    def append_params(url: str, params: dict) -> str:
+        """Append query parameters to URL, handling existing params correctly."""
+        parsed = urlparse(url)
+        existing_params = parse_qs(parsed.query)
+        # Flatten single-value lists from parse_qs
+        existing_params = {k: v[0] if len(v) == 1 else v for k, v in existing_params.items()}
+        existing_params.update(params)
+        new_query = urlencode(existing_params)
+        return urlunparse((parsed.scheme, parsed.netloc, parsed.path,
+                          parsed.params, new_query, parsed.fragment))
 
     if error:
         # OAuth error
-        return RedirectResponse(
-            url=f"{final_redirect}?error={error}"
-        )
+        error_msg = error_description or error
+        redirect_with_error = append_params(final_redirect, {
+            "error": error,
+            "message": error_msg
+        })
+        logger.info(f"OAuth error, redirecting to: {redirect_with_error}")
+        return RedirectResponse(url=redirect_with_error)
 
-    # Composio sends: status=success&connectedAccountId=xxx&appName=gmail&entity_id=user_xxx
+    # Composio sends: status=success&connectedAccountId=xxx&appName=gmail
     if status == "success" and appName:
-        # Extract user_id from entity_id (entity_id is "user_{user_id}")
-        if entity_id and entity_id.startswith("user_"):
-            user_id = entity_id.replace("user_", "")
-            provider = appName.lower()
-            
-            # Update MongoDB to mark integration as active
-            try:
-                service = get_integration_service()
-                await service.complete_connection(user_id, provider)
-            except Exception as e:
-                # Log error but don't fail the redirect
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Error completing connection in MongoDB: {e}")
-        
-        return RedirectResponse(
-            url=f"{final_redirect}?connected={appName}&status=success"
-        )
+        # Mark integration as active
+        if connectedAccountId:
+            integration = await service.get_integration_by_connection_id(connectedAccountId)
+            if integration:
+                await service.complete_connection(
+                    user_id=integration["user_id"],
+                    provider=appName
+                )
+
+        redirect_with_success = append_params(final_redirect, {
+            "status": "success",
+            "appName": appName
+        })
+        logger.info(f"OAuth success, redirecting to: {redirect_with_success}")
+        return RedirectResponse(url=redirect_with_success)
 
     # Fallback - redirect with status
-    return RedirectResponse(url=f"{final_redirect}?status=callback_received")
+    redirect_with_status = append_params(final_redirect, {"status": "callback_received"})
+    logger.info(f"OAuth callback fallback, redirecting to: {redirect_with_status}")
+    return RedirectResponse(url=redirect_with_status)
 
 
 @router.post("/disconnect")

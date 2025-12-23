@@ -1,13 +1,81 @@
 """Integration service combining MongoDB and Composio operations."""
 import logging
+import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 from ..db.mongodb import get_collection
 from ..models.integration import Integration, IntegrationStatus
 from .composio_service import get_composio_service
+# from .database_service import get_database_service  # TODO: Enable after testing
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# OAuth Session Storage for Redirect URLs
+# ============================================================
+# We use MongoDB to store session_id -> redirect_url mappings
+# This persists across service restarts unlike in-memory storage
+# ============================================================
+
+async def store_oauth_session(session_id: str, redirect_url: str, user_id: str, provider: str) -> None:
+    """
+    Store OAuth session with redirect URL.
+
+    Args:
+        session_id: Unique session identifier
+        redirect_url: URL to redirect after OAuth
+        user_id: User ID initiating the OAuth
+        provider: Integration provider (gmail, slack, etc.)
+    """
+    collection = await get_collection("oauth_sessions")
+    await collection.insert_one({
+        "session_id": session_id,
+        "redirect_url": redirect_url,
+        "user_id": user_id,
+        "provider": provider,
+        "created_at": datetime.utcnow()
+    })
+    logger.info(f"Stored OAuth session {session_id} with redirect_url: {redirect_url}")
+
+
+async def get_oauth_session(session_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Retrieve and delete OAuth session (one-time use).
+
+    Args:
+        session_id: Session identifier
+
+    Returns:
+        Session data including redirect_url, or None if not found
+    """
+    collection = await get_collection("oauth_sessions")
+    session = await collection.find_one_and_delete({"session_id": session_id})
+    if session:
+        logger.info(f"Retrieved OAuth session {session_id} with redirect_url: {session.get('redirect_url')}")
+    else:
+        logger.warning(f"OAuth session {session_id} not found")
+    return session
+
+
+async def cleanup_old_oauth_sessions(max_age_minutes: int = 30) -> int:
+    """
+    Clean up OAuth sessions older than max_age_minutes.
+
+    Args:
+        max_age_minutes: Maximum age of sessions to keep
+
+    Returns:
+        Number of sessions deleted
+    """
+    from datetime import timedelta
+    collection = await get_collection("oauth_sessions")
+    cutoff = datetime.utcnow() - timedelta(minutes=max_age_minutes)
+    result = await collection.delete_many({"created_at": {"$lt": cutoff}})
+    if result.deleted_count > 0:
+        logger.info(f"Cleaned up {result.deleted_count} old OAuth sessions")
+    return result.deleted_count
 
 
 class IntegrationService:
@@ -59,6 +127,44 @@ class IntegrationService:
         })
         return integration
 
+    async def get_integration_by_connection_id(self, connection_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get an integration by Composio connection ID.
+
+        Args:
+            connection_id: Composio connected account ID
+
+        Returns:
+            Integration record or None
+        """
+        collection = await get_collection("integrations")
+        integration = await collection.find_one({
+            "composio_connection_id": connection_id
+        })
+        return integration
+
+    async def get_pending_integration_by_provider(self, provider: str) -> Optional[Dict[str, Any]]:
+        """
+        Get the most recent pending integration for a provider.
+
+        This is a fallback when connection_id is not available.
+
+        Args:
+            provider: Integration provider name (e.g., 'gmail')
+
+        Returns:
+            Most recent pending integration or None
+        """
+        collection = await get_collection("integrations")
+        integration = await collection.find_one(
+            {
+                "provider": provider.lower(),
+                "status": IntegrationStatus.PENDING.value
+            },
+            sort=[("updated_at", -1)]  # Get most recent
+        )
+        return integration
+
     async def initiate_connection(
         self,
         user_id: str,
@@ -95,11 +201,24 @@ class IntegrationService:
         # Create entity_id from user_id
         entity_id = f"user_{user_id}"
 
-        # Initiate connection with Composio
+        # Generate session_id and store redirect_url if provided
+        session_id = None
+        if redirect_url:
+            session_id = str(uuid.uuid4())
+            await store_oauth_session(session_id, redirect_url, user_id, provider)
+            logger.info(f"Created OAuth session {session_id} for redirect to: {redirect_url}")
+
+        # Clean up old sessions periodically (non-blocking)
+        try:
+            await cleanup_old_oauth_sessions(max_age_minutes=30)
+        except Exception as e:
+            logger.warning(f"Failed to cleanup old sessions: {e}")
+
+        # Initiate connection with Composio - pass session_id, NOT redirect_url
         connection_info = self.composio.initiate_connection(
             user_id=entity_id,
             app_name=provider,
-            redirect_url=redirect_url,
+            session_id=session_id,
             force_reauth=force_reauth
         )
 
@@ -143,6 +262,7 @@ class IntegrationService:
             "composio_entity_id": entity_id,
             "composio_connection_id": connection_info.get("connection_id"),
             "status": IntegrationStatus.PENDING.value,
+            # Note: redirect_url is stored in oauth_sessions collection, not here
             "updated_at": datetime.utcnow()
         }
 
@@ -288,21 +408,21 @@ class IntegrationService:
         # Extract provider from action name (e.g., GMAIL_SEND_EMAIL -> gmail)
         provider = action.split("_")[0].lower()
 
-        # Verify user has this integration connected
+        # Build entity_id - check MongoDB first, fallback to default format
         integration = await self.get_integration(user_id, provider)
-        if not integration:
+        entity_id = f"user_{user_id}"
+
+        if integration:
+            entity_id = integration.get("composio_entity_id", entity_id)
+
+        # Check Composio directly for connection status (source of truth)
+        # This handles cases where MongoDB status is stale/pending
+        composio_connection = self.composio.get_connection(entity_id, provider)
+        if not composio_connection:
             return {
                 "success": False,
-                "error": f"User does not have {provider} connected"
+                "error": f"User does not have {provider} connected. Please connect first."
             }
-
-        if integration.get("status") != IntegrationStatus.ACTIVE.value:
-            return {
-                "success": False,
-                "error": f"{provider} integration is not active"
-            }
-
-        entity_id = integration.get("composio_entity_id", f"user_{user_id}")
 
         # Execute via Composio
         return self.composio.execute_action(entity_id, action, params)

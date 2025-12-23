@@ -228,7 +228,6 @@ async def list_provider_actions(
 @router.get("/schema/{action}")
 async def get_action_schema(
     action: str,
-    user_id: str,
     _: str = Depends(verify_api_key)
 ):
     """
@@ -236,35 +235,69 @@ async def get_action_schema(
 
     Args:
         action: Action name (e.g., 'GMAIL_SEND_EMAIL')
-        user_id: User ID to fetch schema for
 
     Returns:
         Action schema with parameters from Composio
     """
-    from ..services.composio_service import get_composio_service
+    import requests
+    import os
 
+    # Extract provider from action name (e.g., GMAIL_SEND_EMAIL -> gmail)
     provider = action.split("_")[0].lower()
 
     try:
-        composio = get_composio_service()
-        entity_id = f"user_{user_id}"
-        tools = composio.client.tools.get(
-            user_id=entity_id,
-            toolkits=[provider.upper()]
-        )
+        composio_api_key = os.getenv("COMPOSIO_API_KEY")
+        if not composio_api_key:
+            raise HTTPException(
+                status_code=500,
+                detail="COMPOSIO_API_KEY not configured"
+            )
 
-        for tool in tools:
-            if getattr(tool, 'name', '') == action:
-                return {
+        # Fetch action schema directly from Composio API
+        composio_url = "https://backend.composio.dev/api/v2/actions"
+        headers = {"X-API-Key": composio_api_key}
+        params = {"apps": provider}
+
+        response = requests.get(composio_url, headers=headers, params=params, timeout=30)
+
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Composio API error: {response.status_code}"
+            )
+
+        composio_data = response.json()
+        actions = composio_data.get("items", [])
+
+        # Find the specific action
+        for item in actions:
+            if item.get("name") == action:
+                result = {
                     "action": action,
-                    "description": getattr(tool, 'description', ''),
-                    "parameters": getattr(tool, 'parameters', {})
+                    "description": item.get("description", ""),
                 }
+
+                # Include request parameters schema
+                if "parameters" in item:
+                    params_data = item["parameters"]
+                    result["parameters"] = {
+                        "type": params_data.get("type", "object"),
+                        "properties": params_data.get("properties", {}),
+                        "required": params_data.get("required", [])
+                    }
+
+                # Include response schema if available
+                if "response" in item:
+                    result["response_schema"] = item["response"]
+
+                return result
 
         raise HTTPException(status_code=404, detail=f"Action not found: {action}")
 
     except HTTPException:
         raise
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Failed to reach Composio API: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch schema: {str(e)}")
 

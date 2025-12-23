@@ -3,8 +3,8 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables (override=True ensures .env takes precedence)
-load_dotenv(override=True)
+# Load environment variables (override=False so test env vars take precedence)
+load_dotenv(override=False)
 
 # Base paths
 BASE_DIR = Path(__file__).parent.parent
@@ -24,8 +24,19 @@ SERVER_PORT = int(os.getenv("MCP_SERVICE_PORT", "8001"))
 # API Key for agent authentication
 AGENT_API_KEY = os.getenv("AGENT_API_KEY", "")
 
-# Supported integrations (initial set)
-SUPPORTED_INTEGRATIONS = ["gmail", "slack", "docs", "sheet", "drive", "github", "bitbucket", "youtube"]
+# TODO: Enable after testing database connectors
+# Encryption key for database credentials (Fernet)
+# Generate with: from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())
+# ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "")
+
+# Supported integrations - derived from tools_config.py (single source of truth)
+from .tools_config import get_enabled_tools
+
+# Simple list of supported integrations
+SUPPORTED_INTEGRATIONS = list(get_enabled_tools().keys())
+
+# TODO: Enable after testing database connectors
+# SUPPORTED_DATABASES = ["postgresql", "mysql", "mongodb", "oracle", "bigquery"]
 
 # OAuth Redirect Base URL
 OAUTH_REDIRECT_BASE = os.getenv("OAUTH_REDIRECT_BASE", "http://localhost:8001")
@@ -40,5 +51,9 @@ def validate_config():
 
     if not AGENT_API_KEY:
         errors.append("AGENT_API_KEY is not set (needed for agent auth)")
+
+    # TODO: Enable after testing database connectors
+    # if not ENCRYPTION_KEY:
+    #     errors.append("ENCRYPTION_KEY is not set (needed for database credentials encryption)")
 
     return errors

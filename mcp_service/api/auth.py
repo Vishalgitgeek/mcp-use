@@ -1,7 +1,6 @@
 """API authentication utilities."""
+import os
 from fastapi import Header, HTTPException
-
-from ..config import AGENT_API_KEY
 
 
 async def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")) -> str:
@@ -17,13 +16,16 @@ async def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")) -> str
     Raises:
         HTTPException: If API key is invalid
     """
-    if not AGENT_API_KEY:
+    # Read dynamically to support testing
+    agent_api_key = os.getenv("AGENT_API_KEY", "")
+
+    if not agent_api_key:
         raise HTTPException(
             status_code=500,
             detail="Server misconfigured: AGENT_API_KEY not set"
         )
 
-    if x_api_key != AGENT_API_KEY:
+    if x_api_key != agent_api_key:
         raise HTTPException(
             status_code=401,
             detail="Invalid API key"

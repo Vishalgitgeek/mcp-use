@@ -42,3 +42,19 @@ google-api-python-client>=2.108.0
 # Uncomment if you need OpenAI/LangChain integration
 # openai>=1.0.0
 # langchain-openai>=0.0.2
+
+# ============================================
+# Testing
+# ============================================
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+httpx>=0.25.0  # For TestClient
+
+# ============================================
+# TODO: Enable after testing database connectors
+# ============================================
+# cryptography>=41.0.0
+# asyncpg>=0.29.0
+# aiomysql>=0.2.0
+# oracledb>=2.0.0
+# google-cloud-bigquery>=3.13.0

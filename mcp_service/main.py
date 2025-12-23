@@ -8,6 +8,7 @@ from .config import SERVER_HOST, SERVER_PORT, validate_config
 from .db.mongodb import connect_to_mongodb, close_connection, create_indexes
 from .api.integrations import router as integrations_router
 from .api.tools import router as tools_router
+# from .api.databases import router as databases_router  # TODO: Enable after testing
 
 # Configure logging
 logging.basicConfig(
@@ -55,8 +56,7 @@ app = FastAPI(
     Service for managing MCP integrations and exposing tools to AI agents.
 
     ## Features
-    - User integration management (Gmail, Slack, etc.)
-    - OAuth connection handling via Composio
+    - OAuth integrations (Gmail, Slack, etc.) via Composio
     - Tool discovery and execution for AI agents
 
     ## Authentication
@@ -79,6 +79,7 @@ app.add_middleware(
 # Include routers
 app.include_router(integrations_router)
 app.include_router(tools_router)
+# app.include_router(databases_router)  # TODO: Enable after testing
 
 
 @app.get("/")

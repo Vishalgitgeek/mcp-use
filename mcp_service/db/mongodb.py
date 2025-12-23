@@ -63,7 +63,7 @@ async def create_indexes():
     """Create necessary indexes for collections."""
     db = await get_database()
 
-    # Integrations collection indexes
+    # Integrations collection indexes (OAuth - Composio)
     integrations = db["integrations"]
 
     # Unique index on user_id + provider (one account per integration per user)
@@ -75,6 +75,22 @@ async def create_indexes():
 
     # Index for querying by user_id
     await integrations.create_index(
+        [("user_id", 1)],
+        name="user_id_index"
+    )
+
+    # User databases collection indexes (Database connections)
+    user_databases = db["user_databases"]
+
+    # Unique index on user_id + db_type (one database per type per user)
+    await user_databases.create_index(
+        [("user_id", 1), ("db_type", 1)],
+        unique=True,
+        name="user_db_type_unique"
+    )
+
+    # Index for querying by user_id
+    await user_databases.create_index(
         [("user_id", 1)],
         name="user_id_index"
     )

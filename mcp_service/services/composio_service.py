@@ -52,7 +52,7 @@ class ComposioService:
         self,
         user_id: str,
         app_name: str,
-        redirect_url: Optional[str] = None,
+        session_id: Optional[str] = None,
         force_reauth: bool = False
     ) -> Dict[str, Any]:
         """
@@ -61,7 +61,7 @@ class ComposioService:
         Args:
             user_id: User's ID
             app_name: App to connect (e.g., 'gmail', 'slack')
-            redirect_url: URL to redirect after OAuth
+            session_id: Session ID to include in callback URL for redirect lookup
             force_reauth: If True, disconnect existing connection first
 
         Returns:
@@ -83,11 +83,18 @@ class ComposioService:
                         "status": "already_connected"
                     }
 
-            callback_url = redirect_url or f"{OAUTH_REDIRECT_BASE}/api/integrations/callback"
+            # Always use OUR callback URL - Composio only accepts whitelisted URLs
+            # Include session_id so we can look up the user's redirect_url later
+            callback_url = f"{OAUTH_REDIRECT_BASE}/api/integrations/callback"
+            if session_id:
+                callback_url = f"{callback_url}?session_id={session_id}"
+                logger.info(f"Using callback URL with session_id: {callback_url}")
+
             auth_config_id = self._get_auth_config_id(app_name)
 
-            # Initiate connection with correct parameters
-            connection = self.client.connected_accounts.initiate(
+            # Use link() method - works for both OAuth and non-OAuth (service account) integrations
+            # link() returns a Composio Connect Link that handles all auth types via hosted UI
+            connection = self.client.connected_accounts.link(
                 user_id=user_id,
                 auth_config_id=auth_config_id,
                 callback_url=callback_url
