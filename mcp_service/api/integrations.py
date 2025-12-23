@@ -186,13 +186,17 @@ async def oauth_callback(
     # ============================================================
 
     final_redirect = None
+    session_user_id = None
+    session_provider = None
 
     # Primary method: Look up by session_id
     if session_id:
         session = await get_oauth_session(session_id)
         if session:
             final_redirect = session.get("redirect_url")
-            logger.info(f"Retrieved redirect_url from session {session_id}: {final_redirect}")
+            session_user_id = session.get("user_id")
+            session_provider = session.get("provider")
+            logger.info(f"Retrieved session {session_id}: redirect={final_redirect}, user={session_user_id}, provider={session_provider}")
         else:
             logger.warning(f"Session {session_id} not found - may have expired")
 
@@ -231,14 +235,30 @@ async def oauth_callback(
 
     # Composio sends: status=success&connectedAccountId=xxx&appName=gmail
     if status == "success" and appName:
-        # Mark integration as active
-        if connectedAccountId:
+        # Mark integration as active using session data (preferred) or connection ID lookup
+        provider_to_update = appName.lower()
+        user_to_update = None
+
+        # Method 1: Use session data (most reliable with link() method)
+        if session_user_id:
+            user_to_update = session_user_id
+            logger.info(f"Using session user_id: {user_to_update}")
+        # Method 2: Fallback to connection ID lookup
+        elif connectedAccountId:
             integration = await service.get_integration_by_connection_id(connectedAccountId)
             if integration:
-                await service.complete_connection(
-                    user_id=integration["user_id"],
-                    provider=appName
-                )
+                user_to_update = integration["user_id"]
+                logger.info(f"Using connection ID lookup, user_id: {user_to_update}")
+
+        # Update status to active
+        if user_to_update:
+            await service.complete_connection(
+                user_id=user_to_update,
+                provider=provider_to_update
+            )
+            logger.info(f"Marked {provider_to_update} as active for user {user_to_update}")
+        else:
+            logger.warning(f"Could not determine user_id to update status for {appName}")
 
         redirect_with_success = append_params(final_redirect, {
             "status": "success",
