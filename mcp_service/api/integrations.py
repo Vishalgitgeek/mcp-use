@@ -154,12 +154,14 @@ async def oauth_callback(
     code: Optional[str] = None,
     state: Optional[str] = None,
     status: Optional[str] = None,
+    # Support both camelCase (initiate method) and snake_case (link method)
     connectedAccountId: Optional[str] = None,
+    connected_account_id: Optional[str] = None,
     appName: Optional[str] = None,
+    app_name: Optional[str] = None,
     error: Optional[str] = None,
     error_description: Optional[str] = None,
     session_id: Optional[str] = None
-
 ):
     """
     OAuth callback endpoint.
@@ -173,8 +175,12 @@ async def oauth_callback(
 
     logger = logging.getLogger("mcp.oauth")
 
-    logger.info(f"OAuth callback received: status={status}, appName={appName}, "
-                f"connectedAccountId={connectedAccountId}, session_id={session_id}")
+    # Normalize parameter names (support both camelCase and snake_case)
+    final_connected_account_id = connectedAccountId or connected_account_id
+    final_app_name = appName or app_name
+
+    logger.info(f"OAuth callback received: status={status}, appName={final_app_name}, "
+                f"connectedAccountId={final_connected_account_id}, session_id={session_id}")
 
     service = get_integration_service()
 
@@ -233,10 +239,16 @@ async def oauth_callback(
         logger.info(f"OAuth error, redirecting to: {redirect_with_error}")
         return RedirectResponse(url=redirect_with_error)
 
-    # Composio sends: status=success&connectedAccountId=xxx&appName=gmail
-    if status == "success" and appName:
-        # Mark integration as active using session data (preferred) or connection ID lookup
-        provider_to_update = appName.lower()
+    # Composio sends: status=success&connected_account_id=xxx&app_name=gmail (or camelCase variants)
+    if status == "success":
+        # Determine provider: from callback params or session data
+        provider_to_update = None
+        if final_app_name:
+            provider_to_update = final_app_name.lower()
+        elif session_provider:
+            provider_to_update = session_provider.lower()
+            logger.info(f"Using provider from session: {provider_to_update}")
+
         user_to_update = None
 
         # Method 1: Use session data (most reliable with link() method)
@@ -244,25 +256,25 @@ async def oauth_callback(
             user_to_update = session_user_id
             logger.info(f"Using session user_id: {user_to_update}")
         # Method 2: Fallback to connection ID lookup
-        elif connectedAccountId:
-            integration = await service.get_integration_by_connection_id(connectedAccountId)
+        elif final_connected_account_id:
+            integration = await service.get_integration_by_connection_id(final_connected_account_id)
             if integration:
                 user_to_update = integration["user_id"]
                 logger.info(f"Using connection ID lookup, user_id: {user_to_update}")
 
         # Update status to active
-        if user_to_update:
+        if user_to_update and provider_to_update:
             await service.complete_connection(
                 user_id=user_to_update,
                 provider=provider_to_update
             )
             logger.info(f"Marked {provider_to_update} as active for user {user_to_update}")
         else:
-            logger.warning(f"Could not determine user_id to update status for {appName}")
+            logger.warning(f"Could not determine user_id or provider to update status. user={user_to_update}, provider={provider_to_update}")
 
         redirect_with_success = append_params(final_redirect, {
             "status": "success",
-            "appName": appName
+            "appName": provider_to_update or "unknown"
         })
         logger.info(f"OAuth success, redirecting to: {redirect_with_success}")
         return RedirectResponse(url=redirect_with_success)
