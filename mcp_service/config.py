@@ -24,10 +24,9 @@ SERVER_PORT = int(os.getenv("MCP_SERVICE_PORT", "8001"))
 # API Key for agent authentication
 AGENT_API_KEY = os.getenv("AGENT_API_KEY", "")
 
-# TODO: Enable after testing database connectors
 # Encryption key for database credentials (Fernet)
 # Generate with: from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())
-# ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "")
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "")
 
 # Supported integrations - derived from tools_config.py (single source of truth)
 from .tools_config import get_enabled_tools
@@ -35,8 +34,8 @@ from .tools_config import get_enabled_tools
 # Simple list of supported integrations
 SUPPORTED_INTEGRATIONS = list(get_enabled_tools().keys())
 
-# TODO: Enable after testing database connectors
-# SUPPORTED_DATABASES = ["postgresql", "mysql", "mongodb", "oracle", "bigquery"]
+# Supported database types for direct connections
+SUPPORTED_DATABASES = ["postgresql", "mysql", "mongodb", "oracle", "bigquery"]
 
 # OAuth Redirect Base URL
 OAUTH_REDIRECT_BASE = os.getenv("OAUTH_REDIRECT_BASE", "http://localhost:8001")
@@ -52,8 +51,7 @@ def validate_config():
     if not AGENT_API_KEY:
         errors.append("AGENT_API_KEY is not set (needed for agent auth)")
 
-    # TODO: Enable after testing database connectors
-    # if not ENCRYPTION_KEY:
-    #     errors.append("ENCRYPTION_KEY is not set (needed for database credentials encryption)")
+    if not ENCRYPTION_KEY:
+        errors.append("ENCRYPTION_KEY is not set (needed for database credentials encryption)")
 
     return errors

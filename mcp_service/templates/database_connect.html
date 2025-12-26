@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connect {{ db_display_name }}</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            width: 100%;
+            max-width: 480px;
+            padding: 40px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .header h1 {
+            font-size: 24px;
+            color: #1a1a2e;
+            margin-bottom: 8px;
+        }
+        .header p {
+            color: #6b7280;
+            font-size: 14px;
+        }
+        .db-icon {
+            width: 64px;
+            height: 64px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px;
+            font-size: 28px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #374151;
+            margin-bottom: 6px;
+        }
+        .form-group label .required {
+            color: #ef4444;
+        }
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        .form-group textarea {
+            min-height: 120px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            resize: vertical;
+        }
+        .form-group .hint {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 4px;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+        }
+        .submit-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.2s;
+        }
+        .submit-btn:hover {
+            opacity: 0.9;
+        }
+        .submit-btn:active {
+            transform: scale(0.98);
+        }
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .error-message {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #dc2626;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .success-message {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            color: #16a34a;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        .loading.show {
+            display: block;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e5e7eb;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 12px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .json-upload {
+            border: 2px dashed #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background-color 0.2s;
+        }
+        .json-upload:hover {
+            border-color: #667eea;
+            background-color: #f8f9ff;
+        }
+        .json-upload.dragover {
+            border-color: #667eea;
+            background-color: #f0f4ff;
+        }
+        .json-upload input[type="file"] {
+            display: none;
+        }
+        .json-upload-icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+        .json-upload-text {
+            font-size: 14px;
+            color: #6b7280;
+        }
+        .json-upload-text strong {
+            color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="db-icon">{{ db_icon }}</div>
+            <h1>Connect {{ db_display_name }}</h1>
+            <p>{{ db_description }}</p>
+        </div>
+
+        {% if error %}
+        <div class="error-message">{{ error }}</div>
+        {% endif %}
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Testing connection...</p>
+        </div>
+
+        <form id="credentialsForm" method="POST" action="/api/databases/connect/callback">
+            <input type="hidden" name="session_id" value="{{ session_id }}">
+
+            {% for field in fields %}
+            <div class="form-group">
+                {% if field.type == "string" and field.name == "credentials_json" %}
+                <!-- Special handling for JSON credentials (BigQuery) -->
+                <label>
+                    {{ field.description }}
+                    {% if field.required %}<span class="required">*</span>{% endif %}
+                </label>
+                <div class="json-upload" id="jsonUpload">
+                    <input type="file" id="jsonFile" accept=".json">
+                    <div class="json-upload-icon">📄</div>
+                    <div class="json-upload-text">
+                        <strong>Click to upload</strong> or drag and drop<br>
+                        Service account JSON file
+                    </div>
+                </div>
+                <textarea
+                    name="{{ field.name }}"
+                    id="{{ field.name }}"
+                    placeholder='Paste your JSON here or upload file above...'
+                    {% if field.required %}required{% endif %}
+                ></textarea>
+                <div class="hint">Upload your service account JSON file or paste the contents directly</div>
+
+                {% elif field.type == "password" %}
+                <label>
+                    {{ field.description }}
+                    {% if field.required %}<span class="required">*</span>{% endif %}
+                </label>
+                <input
+                    type="password"
+                    name="{{ field.name }}"
+                    id="{{ field.name }}"
+                    placeholder="{{ field.description }}"
+                    {% if field.required %}required{% endif %}
+                >
+
+                {% elif field.type == "integer" %}
+                <label>
+                    {{ field.description }}
+                    {% if field.required %}<span class="required">*</span>{% endif %}
+                </label>
+                <input
+                    type="number"
+                    name="{{ field.name }}"
+                    id="{{ field.name }}"
+                    placeholder="{{ field.default if field.default else field.description }}"
+                    value="{{ field.default if field.default else '' }}"
+                    {% if field.required %}required{% endif %}
+                >
+
+                {% elif field.type == "boolean" %}
+                <div class="checkbox-group">
+                    <input
+                        type="checkbox"
+                        name="{{ field.name }}"
+                        id="{{ field.name }}"
+                        {% if field.default %}checked{% endif %}
+                    >
+                    <label for="{{ field.name }}">{{ field.description }}</label>
+                </div>
+
+                {% else %}
+                <label>
+                    {{ field.description }}
+                    {% if field.required %}<span class="required">*</span>{% endif %}
+                </label>
+                <input
+                    type="text"
+                    name="{{ field.name }}"
+                    id="{{ field.name }}"
+                    placeholder="{{ field.description }}"
+                    {% if field.required %}required{% endif %}
+                >
+                {% endif %}
+            </div>
+            {% endfor %}
+
+            <button type="submit" class="submit-btn" id="submitBtn">
+                Connect {{ db_display_name }}
+            </button>
+        </form>
+    </div>
+
+    <script>
+        // JSON file upload handling
+        const jsonUpload = document.getElementById('jsonUpload');
+        const jsonFile = document.getElementById('jsonFile');
+        const credentialsJsonField = document.getElementById('credentials_json');
+
+        if (jsonUpload && jsonFile) {
+            jsonUpload.addEventListener('click', () => jsonFile.click());
+
+            jsonUpload.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                jsonUpload.classList.add('dragover');
+            });
+
+            jsonUpload.addEventListener('dragleave', () => {
+                jsonUpload.classList.remove('dragover');
+            });
+
+            jsonUpload.addEventListener('drop', (e) => {
+                e.preventDefault();
+                jsonUpload.classList.remove('dragover');
+                const file = e.dataTransfer.files[0];
+                if (file) handleJsonFile(file);
+            });
+
+            jsonFile.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) handleJsonFile(file);
+            });
+
+            function handleJsonFile(file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        // Validate JSON
+                        JSON.parse(e.target.result);
+                        credentialsJsonField.value = e.target.result;
+                        jsonUpload.innerHTML = `
+                            <div class="json-upload-icon">✅</div>
+                            <div class="json-upload-text">
+                                <strong>${file.name}</strong> loaded successfully
+                            </div>
+                        `;
+                    } catch (err) {
+                        alert('Invalid JSON file. Please upload a valid JSON file.');
+                    }
+                };
+                reader.readAsText(file);
+            }
+        }
+
+        // Form submission with loading state
+        const form = document.getElementById('credentialsForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const loading = document.getElementById('loading');
+
+        form.addEventListener('submit', function(e) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Connecting...';
+            loading.classList.add('show');
+        });
+    </script>
+</body>
+</html>

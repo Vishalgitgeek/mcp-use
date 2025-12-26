@@ -1,7 +1,7 @@
 """Database connection service for handling user database connections."""
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 
 from cryptography.fernet import Fernet
@@ -19,6 +19,80 @@ from ..models.database import (
 )
 
 logger = logging.getLogger("mcp.database")
+
+
+# ============================================================
+# Database Session Storage for Hosted UI Flow
+# ============================================================
+
+async def store_database_session(
+    session_id: str,
+    user_id: str,
+    db_type: str,
+    redirect_url: Optional[str] = None
+) -> None:
+    """
+    Store database connection session.
+
+    Args:
+        session_id: Unique session identifier
+        user_id: User ID initiating the connection
+        db_type: Database type (postgresql, mysql, etc.)
+        redirect_url: URL to redirect after connection
+    """
+    collection = await get_collection("database_sessions")
+    await collection.insert_one({
+        "session_id": session_id,
+        "user_id": user_id,
+        "db_type": db_type,
+        "redirect_url": redirect_url,
+        "created_at": datetime.utcnow()
+    })
+    logger.info(f"Stored database session {session_id} for {db_type}")
+
+
+async def get_database_session(session_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Retrieve database session (does NOT delete - may need multiple attempts).
+
+    Args:
+        session_id: Session identifier
+
+    Returns:
+        Session data or None if not found
+    """
+    collection = await get_collection("database_sessions")
+    session = await collection.find_one({"session_id": session_id})
+    if session:
+        logger.info(f"Retrieved database session {session_id}")
+    else:
+        logger.warning(f"Database session {session_id} not found")
+    return session
+
+
+async def delete_database_session(session_id: str) -> bool:
+    """Delete a database session after successful connection."""
+    collection = await get_collection("database_sessions")
+    result = await collection.delete_one({"session_id": session_id})
+    return result.deleted_count > 0
+
+
+async def cleanup_old_database_sessions(max_age_minutes: int = 30) -> int:
+    """
+    Clean up database sessions older than max_age_minutes.
+
+    Args:
+        max_age_minutes: Maximum age of sessions to keep
+
+    Returns:
+        Number of sessions deleted
+    """
+    collection = await get_collection("database_sessions")
+    cutoff = datetime.utcnow() - timedelta(minutes=max_age_minutes)
+    result = await collection.delete_many({"created_at": {"$lt": cutoff}})
+    if result.deleted_count > 0:
+        logger.info(f"Cleaned up {result.deleted_count} old database sessions")
+    return result.deleted_count
 
 
 class DatabaseService:

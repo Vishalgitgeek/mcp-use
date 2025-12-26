@@ -8,7 +8,7 @@ from .config import SERVER_HOST, SERVER_PORT, validate_config
 from .db.mongodb import connect_to_mongodb, close_connection, create_indexes
 from .api.integrations import router as integrations_router
 from .api.tools import router as tools_router
-# from .api.databases import router as databases_router  # TODO: Enable after testing
+from .api.databases import router as databases_router
 
 # Configure logging
 logging.basicConfig(
@@ -79,7 +79,7 @@ app.add_middleware(
 # Include routers
 app.include_router(integrations_router)
 app.include_router(tools_router)
-# app.include_router(databases_router)  # TODO: Enable after testing
+app.include_router(databases_router)
 
 
 @app.get("/")
@@ -92,7 +92,8 @@ async def root():
         "docs": "/docs",
         "endpoints": {
             "integrations": "/api/integrations",
-            "tools": "/api/tools"
+            "tools": "/api/tools",
+            "databases": "/api/databases"
         }
     }
 

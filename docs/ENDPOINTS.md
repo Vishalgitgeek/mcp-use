@@ -54,6 +54,48 @@
 
 ---
 
+## Databases (Direct Connections)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/databases/types` | List supported database types with schemas |
+| GET | `/api/databases?user_id={id}` | List user's connected databases |
+| GET | `/api/databases/{db_type}/status?user_id={id}` | Get database connection status |
+| GET | `/api/databases/{db_type}/schema?user_id={id}` | Get database schema |
+| POST | `/api/databases/initiate?user_id={id}&db_type={type}` | Start connection flow (returns connect_url) |
+| POST | `/api/databases/test` | Test connection without saving |
+| POST | `/api/databases/connect` | Direct API connection (for programmatic use) |
+| POST | `/api/databases/disconnect` | Disconnect a database |
+| GET | `/api/databases/connect/{session_id}` | Hosted UI page (no auth) |
+| POST | `/api/databases/connect/callback` | Credential form handler (no auth) |
+
+### Initiate Response
+```json
+{"connect_url": "http://.../api/databases/connect/{session_id}", "session_id": "...", "db_type": "postgresql"}
+```
+
+### Direct Connect Request Body
+```json
+{"user_id": "xxx", "db_type": "postgresql", "credentials": {"host": "...", "port": 5432, "database": "...", "username": "...", "password": "..."}}
+```
+
+### Disconnect Request Body
+```json
+{"user_id": "xxx", "db_type": "postgresql"}
+```
+
+### Supported Database Types
+
+| Type | Description |
+|------|-------------|
+| `postgresql` | PostgreSQL database |
+| `mysql` | MySQL database |
+| `mongodb` | MongoDB NoSQL database |
+| `oracle` | Oracle database (optional) |
+| `bigquery` | Google BigQuery (optional) |
+
+---
+
 ## Supported Providers
 
 | Provider | Category |
