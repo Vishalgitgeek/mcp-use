@@ -394,7 +394,22 @@ PROVIDER_ACTIONS = {
     ],
     
     # ================== GOOGLE SERVICES (ADDITIONAL) ==================
-   
+   "google_calendar": [
+        # Event Management (Essential)
+        {"name": "GOOGLECALENDAR_CREATE_EVENT", "description": "Create Event - Create a new calendar event with details"},
+        {"name": "GOOGLECALENDAR_EVENTS_LIST", "description": "List Events - Retrieve events from a calendar with filtering"},
+        {"name": "GOOGLECALENDAR_FIND_EVENT", "description": "Find Event - Search for specific events by criteria"},
+        {"name": "GOOGLECALENDAR_UPDATE_EVENT", "description": "Update Event - Modify existing calendar event"},
+        {"name": "GOOGLECALENDAR_DELETE_EVENT", "description": "Delete Event - Remove an event from calendar"},
+        {"name": "GOOGLECALENDAR_QUICK_ADD", "description": "Quick Add - Quickly create event using natural language"},
+        # Calendar Operations (Essential)
+        {"name": "GOOGLECALENDAR_LIST_CALENDARS", "description": "List Calendars - Get all calendars in the account"},
+        {"name": "GOOGLECALENDAR_GET_CALENDAR", "description": "Get Calendar - Retrieve details of a specific calendar"},
+        # Scheduling & Availability (Essential)
+        {"name": "GOOGLECALENDAR_FIND_FREE_SLOTS", "description": "Find Free Slots - Find available time slots for scheduling"},
+        {"name": "GOOGLECALENDAR_FREE_BUSY_QUERY", "description": "Free/Busy Query - Check availability of calendars"},
+    ],
+    
     "googleads": [
         # Campaigns (Essential)
         {"name": "GOOGLEADS_GET_CAMPAIGN_BY_ID", "description": "Get campaign by ID"},

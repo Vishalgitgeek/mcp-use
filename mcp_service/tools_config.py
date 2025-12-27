@@ -47,7 +47,7 @@ ENABLED_TOOLS = {
     # "jira": "ac_YOUR_JIRA_CONFIG_ID",
     
     # Calendar
-    # "google_calendar": "ac_YOUR_GCAL_CONFIG_ID",
+    "google_calendar": "ac_TsB_NjNU9yen",
     # "outlook_calendar": "ac_YOUR_OUTLOOK_CAL_CONFIG_ID",
     
     # Storage
@@ -150,6 +150,11 @@ TOOL_METADATA = {
     "stripe": {
         "category": "payment",
         "description": "Process payments and manage Stripe subscriptions",
+        "enabled": True,
+    },
+    "google_calendar": {
+        "category": "productivity",
+        "description": "Create, manage, and schedule Google Calendar events",
         "enabled": True,
     },
     # Add metadata for other tools as needed
